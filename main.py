@@ -55,7 +55,8 @@ def match_file(repo, file_path, matcher):
 def init_source(conf_source, repo_path):
     if "git" in conf_source:
         git_source = conf_source["git"]
-        repo = init_git_repo(git_source["remote"], repo_path, git_source["branch"])
+        branch = None if "branch" not in git_source else git_source["branch"]
+        repo = init_git_repo(git_source["remote"], repo_path, branch)
         return repo
     else:
         raise RuntimeError(f"Error: No valid sources in: {list(conf_source.keys())}")
