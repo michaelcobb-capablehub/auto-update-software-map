@@ -5,11 +5,14 @@ import shutil
 
 import pygit2
 
-DEBUG = True
-#DEBUG = False
+# Skip doing a fresh clone of the repo
+SKIP_CLONE = True
+
+# Subdirectory under which repositories will be checked out
+DEFAULT_CLONE_DIR = "test_git"
 
 def empty_dir(path):
-    if len(path) == 0 or path == ".":
+    if len(path) == 0 or path == "." or os.path.abspath(path) == os.path.abspath(os.path.curdir):
         raise RuntimeError(f"Refusing to touch path: {path}")
 
     if os.path.isfile(path):
@@ -17,29 +20,56 @@ def empty_dir(path):
 
     if os.path.isdir(path):
         shutil.rmtree(path)
-    os.mkdir(path)
+    os.makedirs(path, exist_ok=True)
 
-def init_git_repo(repo_url, path, branch=None):
-    if not DEBUG or not os.path.isdir(path):
-        empty_dir(path)
-        print(f"Cloning git repository {repo_url} into {path}...")
-        pygit2.clone_repository(repo_url, path, checkout_branch=branch)
+def checkout_remote_branch(repo, remote_branch):
+    refname = remote_branch.name
+
+    if remote_branch.type == pygit2.enums.ReferenceType.SYMBOLIC:
+        raise RuntimeError(f"cannot checkout. {refname} is a symbolic ref")
+
+    # Extract branch name (main)
+    short_name = refname.split("/")[-1]
+    local_refname = f"refs/heads/{short_name}"
+
+    # Create local branch if it doesn't exist
+    try:
+        local_branch = repo.lookup_reference(local_refname)
+    except KeyError:
+        commit = remote_branch.peel(pygit2.Commit)
+        local_branch = repo.create_branch(short_name, commit)
+
+        # track upstream origin
+        local_branch.upstream = remote_branch
+
+    # Checkout working tree
+    repo.checkout(local_branch)
+
+def init_git_repo(repo_url, checkout_path, branch=None):
+    repo = None
+    if not SKIP_CLONE or not os.path.isdir(checkout_path):
+        empty_dir(checkout_path)
+        print(f"Cloning git repository {repo_url} into {checkout_path}...")
+        repo = pygit2.clone_repository(repo_url, checkout_path or DEFAULT_CLONE_DIR, checkout_branch=branch)
         print("Done")
-    repo = pygit2.Repository(path)
-    if DEBUG:
+    else:
+        repo = pygit2.Repository(checkout_path)
+
+    if SKIP_CLONE:
         remote_urls = [x.url for x in repo.remotes]
         assert(repo_url in remote_urls)
     # make sure we checkout the required branch
     if branch is not None:
         origin_name = next((r.name for r in repo.remotes), None)
         if origin_name is None:
-            raise RuntimeError(f"Error: Could not find a remote orign")
-        b = repo.branches[origin_name + '/' + branch]
-        if b is None:
-            raise RuntimeError(f"Error: Branch {branch} does not exist")
-        ref = repo.lookup_reference(b.name)
-        repo.checkout(ref)
+            raise RuntimeError(f"Could not find a remote orign")
+        remote_branch = repo.branches.get(origin_name + "/" + branch)
+        checkout_remote_branch(repo, remote_branch)
     return repo
+
+#
+# Debug
+#
 
 def print_repo_state(repo):
     def print_branch_stats(branch):
