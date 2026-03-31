@@ -7,7 +7,8 @@ def get_config():
         "source": {
             "git": {
                 "remote": "https://github.com/CHERI-Alliance/opensbi.git",
-                "branch": "codasip-cheri-riscv"
+                "branch": "codasip-cheri-riscv",
+                "checkout_dir": "opensbi"
             }
         },
         "matcher": {
