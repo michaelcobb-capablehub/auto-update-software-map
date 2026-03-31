@@ -2,80 +2,213 @@
 
 import os
 import re
-#import shutil
 
 from git_source import *
 
-DEBUG = True
-#DEBUG = False
+#DEBUG = True
+DEBUG = False
+
+CHECKOUT_SUBDIR="repos"
+
+#
+# Common helper functions
+#
+
+def for_all_remote_branches(repo, fn, args):
+    """
+    For each remote branch in the repositry, checks out the remote branch, then
+    calls `fn` with additional arguments in array `args`.
+
+    Returns an array containing elements for each branch, which consists of tuples:
+        (branch name, return value of `fn(repo, *args)`
+    """
+    def map_branch_name(branch_name):
+        return repo.branches.get(branch_name)
+
+    def wrap_branch(branch):
+        checkout_remote_branch(repo, branch)
+        return (branch.name, fn(repo, *args))
+
+    non_symbolic_refs = filter(lambda x: x.type != pygit2.enums.ReferenceType.SYMBOLIC, map(map_branch_name, repo.branches.remote))
+
+    return map(wrap_branch, non_symbolic_refs)
 
 def collect_match_group(groupindex, match):
+    """
+    Collects named capture groups from the regex match `match` into a dict, where each key is given by the
+    regex group index in `groupindex`.
+    """
     return { k: match.group(v) for k, v in groupindex.items() }
 
-def collect_match_groups(regex_matches):
-    for grp, match in regex_matches:
-        g = match.groups()
-        print(grp, g)
+def commit_in_branch(repo, branch, commit):
+    """
+    Returns True if the Git `commit` is contained within the `branch`. False otherwise.
+    """
+    branch_commit = branch.peel(pygit2.Commit)
+    return repo.descendant_of(branch_commit.id, commit.id)
 
-def __match_file(dir, file_path, matchers):
-    path = os.path.join(dir, file_path)
+#
+# Internal versions of the "top level" functions below.
+# Operate only on the currently checked-out branch.
+#
+
+def __match_file(repo, file_path, matchers):
+    """
+    Matches each line of the file `file_path` within the Git repository `repo` by the array of regexs in `matchers`.
+    Each match is converted to a dict using `collect_match_group()` then all matches are flattened into a single dict.
+
+    Returns a tuple containing:
+        (current commit object, regex match).
+    """
+    abspath = os.path.join(repo.workdir, file_path)
     matches = []
 
-    # compile the regexes
-    regexes = [re.compile(x) for x in matchers]
+    commit_ref = repo.head.peel(pygit2.Commit)
 
-    with open(path, "r") as f:
-        for line_num, line in enumerate(f):
-            for r in regexes:
-                match = r.search(line)
-                if match:
-                    matches.append(collect_match_group(r.groupindex, match))
+    try:
+        with open(abspath, "r") as f:
+            for line_num, line in enumerate(f):
+                for r in matchers:
+                    match = r.search(line)
+                    if match:
+                        matches.append(collect_match_group(r.groupindex, match))
+    except Exception as ex:
+        print(f"Exception while processing file: {file_path}:", ex)
+
     # Flatten array of dicts into a single dict
     all_matches = {}
     for m in matches:
         all_matches.update(m)
-    return all_matches
+    return (commit_ref, all_matches)
 
-def from_file(dir, file_path):
-    path = os.path.join(dir, file_path)
-    v = None
-    with open(path, "r") as f:
-        for line in f:
-            v = line
+def __latest_matching_tag(repo, regex):
+    """
+    Walks commits in the current Git `repo` in topological order, and finds the most recent commit which
+    includes a tag matching the given `regex`.
+
+    Returns a nested tuple containing:
+        (tagged commit object, `regex` match)
+    """
+    result = None
+
+    tag_map = {}
+    for ref in repo.references.iterator(pygit2.GIT_REFERENCES_TAGS):
+        commit = ref.peel(pygit2.Commit)
+        tag_map.setdefault(commit, []).append(ref)
+
+    for commit in repo.walk(repo.head.peel(pygit2.Commit).id, pygit2.GIT_SORT_TOPOLOGICAL):
+        is_match = False
+        if commit in tag_map:
+            commit_tags = tag_map[commit]
+            for tag in commit_tags:
+                match = regex.match(tag.name)
+                if match:
+                    result = (commit, collect_match_group(regex.groupindex, match))
+                    is_match = True
+                    break
+        if is_match:
             break
-    return v
 
-def match_file(repo, file_path, matcher):
-    repo_path = repo.workdir # Assuume `repo` is an instance of pygit2.Repository
-    return __match_file(repo_path, file_path, matcher)
-
-###############################################################################
+    return result
 
 
-def init_source(conf_source, repo_path):
+#
+# "top level" functions intended to be used by project "configurations" to perform extraction of version info from the repository.
+#
+
+def latest_matching_tag(repo, match_regex):
+    """
+    For each remote branch in the `repo`, check it out, then return the most recent commit which contains a tag
+    that matches the regex given by `match_regex`.
+    """
+    compiled_regex = re.compile(match_regex)
+    return for_all_remote_branches(repo, __latest_matching_tag, [compiled_regex])
+
+def match_file(repo, file_path, match_regexes):
+    """
+    For each remote branch in the `repo`, check it out, then match each regex in the `match_regexes` array against the file
+    path specified by `file_path` inside the repo.
+    """
+    # compile the regexes
+    compiled_regexes = [re.compile(x) for x in match_regexes]
+    return for_all_remote_branches(repo, __match_file, [file_path, compiled_regexes])
+
+
+#
+# Initialisation functions - for handling the configurations of a particular project
+#
+
+def init_source(conf_source):
+    """
+    Handles the "source" part of the project's configuration.
+    Currently accepted sources are
+      -  Git repository
+
+    Returns the pygit2 object that represents the Git repository
+    """
     if "git" in conf_source:
         git_source = conf_source["git"]
-        branch = None if "branch" not in git_source else git_source["branch"]
-        repo = init_git_repo(git_source["remote"], repo_path, branch)
+        branch = git_source.get("branch")
+        remote = git_source.get("remote")
+        # TODO: Should probably use the repo name to decide where to clone the git repo, just like real git does
+        checkout_dir = None
+        if "checkout_dir" in git_source:
+            checkout_dir = os.path.join(os.path.curdir, CHECKOUT_SUBDIR or "", git_source.get("checkout_dir"))
+        repo = init_git_repo(remote, checkout_dir, branch)
         return repo
     else:
         raise RuntimeError(f"Error: No valid sources in: {list(conf_source.keys())}")
 
 def init_matcher(conf_matcher, repo):
+    """
+    Handles the "matcher" part of the project's configuration.
+
+    Returns a function which, when called, will run the provided matcher function with the provided arguments.
+    """
     def call_matcher():
         return conf_matcher["fn"](repo, *conf_matcher["args"])
 
     return call_matcher
 
-CLONE_DIR = "test_git"
+#
+# Whole repository operations
+#
+
+def find_repo_fork_point(upstream, fork):
+    """
+    Returns the first commit from the currently checked-out branch in `fork` that also appears in
+    the currently checked-out branch in `upstream`.
+
+    This represents the point at which `fork` divereged from `upstream`.
+    """
+
+    #upstream = init_source(upstream_conf.get("source"))
+    #fork = init_source(fork_conf.get("source"))
+
+    for commit_frk in fork.walk(fork.head.target, pygit2.enums.SortMode.TOPOLOGICAL):
+        commit_ups = upstream.get(commit_frk.id)
+        if commit_ups is not None:
+            return commit_ups
+    return None
+
+#
+# Main entry point, called with a project "configuration"
+#
 
 def extract_version(conf):
+    """
+    Extract the version of a project given it's configuration `conf`.
+
+    Checks out the repository, and runs the "matcher" function to extract version information from the repository.
+
+    Returns the result of the "matcher" function
+    """
     conf_source = conf["source"]
-    repo = init_source(conf_source, CLONE_DIR)
-    print("Source:", repo)
+    repo = init_source(conf_source)
+    #print("Source:", repo)
 
     conf_matcher = conf["matcher"]
-    m = init_matcher(conf_matcher, repo)
-    print("Matcher:", m)
-    print(m())
+    version_matcher = init_matcher(conf_matcher, repo)
+    #print("Matcher:", m)
 
+    print(list(version_matcher()))
