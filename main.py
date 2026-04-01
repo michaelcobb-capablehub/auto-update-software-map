@@ -14,25 +14,6 @@ CHECKOUT_SUBDIR="repos"
 # Common helper functions
 #
 
-def for_all_remote_branches(repo, fn, args):
-    """
-    For each remote branch in the repositry, checks out the remote branch, then
-    calls `fn` with additional arguments in array `args`.
-
-    Returns an array containing elements for each branch, which consists of tuples:
-        (branch name, return value of `fn(repo, *args)`
-    """
-    def map_branch_name(branch_name):
-        return repo.branches.get(branch_name)
-
-    def wrap_branch(branch):
-        checkout_remote_branch(repo, branch)
-        return (branch.name, fn(repo, *args))
-
-    non_symbolic_refs = filter(lambda x: x.type != pygit2.enums.ReferenceType.SYMBOLIC, map(map_branch_name, repo.branches.remote))
-
-    return map(wrap_branch, non_symbolic_refs)
-
 def collect_match_group(groupindex, match):
     """
     Collects named capture groups from the regex match `match` into a dict, where each key is given by the
@@ -122,7 +103,8 @@ def latest_matching_tag(repo, match_regex):
     that matches the regex given by `match_regex`.
     """
     compiled_regex = re.compile(match_regex)
-    return for_all_remote_branches(repo, __latest_matching_tag, [compiled_regex])
+    #return for_all_remote_branches(repo, __latest_matching_tag, [compiled_regex])
+    return __latest_matching_tag(repo, compiled_regex)
 
 def match_file(repo, file_path, match_regexes):
     """
@@ -131,8 +113,25 @@ def match_file(repo, file_path, match_regexes):
     """
     # compile the regexes
     compiled_regexes = [re.compile(x) for x in match_regexes]
-    return for_all_remote_branches(repo, __match_file, [file_path, compiled_regexes])
+    #return for_all_remote_branches(repo, __match_file, [file_path, compiled_regexes])
+    return __match_file(repo, file_path, compiled_regexes)
 
+#
+# Whole repository operations
+#
+
+def get_repo_fork_point(upstream, fork):
+    """
+    Returns the first commit from the currently checked-out branch in `fork` that also appears in
+    the currently checked-out branch in `upstream`.
+
+    This represents the point at which `fork` divereged from `upstream`.
+    """
+    for commit_frk in fork.walk(fork.head.target, pygit2.enums.SortMode.TOPOLOGICAL):
+        commit_ups = upstream.get(commit_frk.id)
+        if commit_ups is not None:
+            return commit_ups
+    return None
 
 #
 # Initialisation functions - for handling the configurations of a particular project
@@ -155,47 +154,66 @@ def init_source(conf_source):
         if "checkout_dir" in git_source:
             checkout_dir = os.path.join(os.path.curdir, CHECKOUT_SUBDIR or "", git_source.get("checkout_dir"))
         repo = init_git_repo(remote, checkout_dir, branch)
-        return repo
+        return { "repo": repo, "branch": branch, "remote": remote }
     else:
         raise RuntimeError(f"Error: No valid sources in: {list(conf_source.keys())}")
 
-def init_matcher(conf_matcher, repo):
+def get_origin_branch_ref(repo, branch_name, origin=None):
+    remote_origin = None
+
+    lookup_origin = origin or "origin"
+
+    if lookup_origin in repo.remotes:
+        remote_origin = origin
+    elif origin is not None:
+        raise RuntimeError(f"remote {origin} is not a remote in this repository")
+    else:
+        remote_origin = repo.remotes[0]
+
+    ref_name = f"{remote_origin.name}/{branch_name}"
+    if ref_name in repo.branches.remote:
+        return repo.branches.remote.get(ref_name)
+    else:
+        raise RuntimeError(f"ref {ref_name} does not exist in this repository")
+
+def get_repo_version(repo, conf_matcher):
+    return conf_matcher["fn"](repo, *conf_matcher["args"])
+
+def get_all_repo_versions(repo, conf_matcher, remote_branch_names=None):
     """
     Handles the "matcher" part of the project's configuration.
 
     Returns a function which, when called, will run the provided matcher function with the provided arguments.
     """
-    def call_matcher():
-        return conf_matcher["fn"](repo, *conf_matcher["args"])
 
-    return call_matcher
+    if remote_branch_names is None:
+        branch_refs = map(lambda x: repo.branches.remote.get(x), repo.branches.remote)
+    else:
+        branch_refs = [get_origin_branch_ref(repo, br) for br in remote_branch_names]
 
-#
-# Whole repository operations
-#
+    non_symbolic_refs = filter(lambda x: x.type != pygit2.enums.ReferenceType.SYMBOLIC, branch_refs)
 
-def find_repo_fork_point(upstream, fork):
-    """
-    Returns the first commit from the currently checked-out branch in `fork` that also appears in
-    the currently checked-out branch in `upstream`.
+    def __wrap_fn(ref):
+        checkout_remote_branch(repo, ref)
+        return (ref.name, get_repo_version(repo, conf_matcher))
 
-    This represents the point at which `fork` divereged from `upstream`.
-    """
-
-    #upstream = init_source(upstream_conf.get("source"))
-    #fork = init_source(fork_conf.get("source"))
-
-    for commit_frk in fork.walk(fork.head.target, pygit2.enums.SortMode.TOPOLOGICAL):
-        commit_ups = upstream.get(commit_frk.id)
-        if commit_ups is not None:
-            return commit_ups
-    return None
+    return map(__wrap_fn, non_symbolic_refs)
 
 #
 # Main entry point, called with a project "configuration"
 #
 
-def extract_version(conf):
+def get_fork_matcher(conf, fork_conf):
+    if "matcher" in fork_conf:
+        return fork_conf["matcher"]
+    if "matcher" in conf:
+        return conf["matcher"]
+    return None
+
+def get_fork_config(conf, fork_name):
+    return next(filter(lambda x: x.get("name") == fork_name, conf.get("forks")))
+
+def find_repo_version(conf, fork_name):
     """
     Extract the version of a project given it's configuration `conf`.
 
@@ -203,12 +221,31 @@ def extract_version(conf):
 
     Returns the result of the "matcher" function
     """
-    conf_source = conf["source"]
-    repo = init_source(conf_source)
-    #print("Source:", repo)
 
-    conf_matcher = conf["matcher"]
-    version_matcher = init_matcher(conf_matcher, repo)
-    #print("Matcher:", m)
+    # Find the fork conf with the specified name
+    fork_conf = get_fork_config(conf, fork_name)
 
-    print(list(version_matcher()))
+    conf_source = fork_conf["source"]
+    src = init_source(conf_source)
+    src_repo = src.get("repo")
+
+    conf_matcher = get_fork_matcher(conf, fork_conf)
+    src_remote_branch = src.get("branch")
+    remote_branches = [src_remote_branch] if src_remote_branch is not None else None
+    return get_all_repo_versions(src_repo, conf_matcher, remote_branch_names=remote_branches)
+
+def find_repo_fork_upstream_version(conf, upstream_fork_name, fork_fork_name):
+    conf_upstream = get_fork_config(conf, upstream_fork_name)
+    conf_source_u = conf_upstream["source"]
+    upstream_src = init_source(conf_source_u)
+    upstream_repo = upstream_src.get("repo")
+
+    conf_fork = get_fork_config(conf, fork_fork_name)
+    conf_source_f = conf_fork["source"]
+    fork_src = init_source(conf_source_f)
+    fork_repo = fork_src.get("repo")
+
+    diverge_commit = get_repo_fork_point(upstream_repo, fork_repo)
+    #print("Fork diverged at:", diverge_commit)
+    checkout_commit(upstream_src.get("repo"), diverge_commit)
+    return (diverge_commit, get_repo_version(upstream_src.get("repo"), conf_upstream.get("matcher")))
