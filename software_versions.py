@@ -4,6 +4,7 @@ import os
 import re
 
 from git_source import *
+from version import *
 
 #DEBUG = True
 DEBUG = False
@@ -21,12 +22,15 @@ def collect_match_group(groupindex, match):
     """
     return { k: match.group(v) for k, v in groupindex.items() }
 
-def commit_in_branch(repo, branch, commit):
-    """
-    Returns True if the Git `commit` is contained within the `branch`. False otherwise.
-    """
-    branch_commit = branch.peel(pygit2.Commit)
-    return repo.descendant_of(branch_commit.id, commit.id)
+def get_fork_matcher(conf, fork_conf):
+    if "matcher" in fork_conf:
+        return fork_conf["matcher"]
+    if "matcher" in conf:
+        return conf["matcher"]
+    return None
+
+def get_fork_config(conf, fork_name):
+    return next(filter(lambda x: x.get("name") == fork_name, conf.get("forks")))
 
 #
 # Internal versions of the "top level" functions below.
@@ -102,8 +106,8 @@ def latest_matching_tag(repo, match_regex):
     For each remote branch in the `repo`, check it out, then return the most recent commit which contains a tag
     that matches the regex given by `match_regex`.
     """
+    # compile the regexes
     compiled_regex = re.compile(match_regex)
-    #return for_all_remote_branches(repo, __latest_matching_tag, [compiled_regex])
     return __latest_matching_tag(repo, compiled_regex)
 
 def match_file(repo, file_path, match_regexes):
@@ -113,7 +117,6 @@ def match_file(repo, file_path, match_regexes):
     """
     # compile the regexes
     compiled_regexes = [re.compile(x) for x in match_regexes]
-    #return for_all_remote_branches(repo, __match_file, [file_path, compiled_regexes])
     return __match_file(repo, file_path, compiled_regexes)
 
 #
@@ -137,7 +140,7 @@ def get_repo_fork_point(upstream, fork):
 # Initialisation functions - for handling the configurations of a particular project
 #
 
-def init_source(conf_source):
+def init_source(conf):
     """
     Handles the "source" part of the project's configuration.
     Currently accepted sources are
@@ -145,6 +148,7 @@ def init_source(conf_source):
 
     Returns the pygit2 object that represents the Git repository
     """
+    conf_source = conf["source"]
     if "git" in conf_source:
         git_source = conf_source["git"]
         branch = git_source.get("branch")
@@ -158,28 +162,11 @@ def init_source(conf_source):
     else:
         raise RuntimeError(f"Error: No valid sources in: {list(conf_source.keys())}")
 
-def get_origin_branch_ref(repo, branch_name, origin=None):
-    remote_origin = None
+def get_repo_version(repo, conf_matcher, version_type=None):
+    commit, version = conf_matcher["fn"](repo, *conf_matcher["args"])
+    return (commit, make_version(version_type, version))
 
-    lookup_origin = origin or "origin"
-
-    if lookup_origin in repo.remotes:
-        remote_origin = origin
-    elif origin is not None:
-        raise RuntimeError(f"remote {origin} is not a remote in this repository")
-    else:
-        remote_origin = repo.remotes[0]
-
-    ref_name = f"{remote_origin.name}/{branch_name}"
-    if ref_name in repo.branches.remote:
-        return repo.branches.remote.get(ref_name)
-    else:
-        raise RuntimeError(f"ref {ref_name} does not exist in this repository")
-
-def get_repo_version(repo, conf_matcher):
-    return conf_matcher["fn"](repo, *conf_matcher["args"])
-
-def get_all_repo_versions(repo, conf_matcher, remote_branch_names=None):
+def get_all_repo_versions(repo, conf_matcher, remote_branch_names=None, version_type=None):
     """
     Handles the "matcher" part of the project's configuration.
 
@@ -195,23 +182,13 @@ def get_all_repo_versions(repo, conf_matcher, remote_branch_names=None):
 
     def __wrap_fn(ref):
         checkout_remote_branch(repo, ref)
-        return (ref.name, get_repo_version(repo, conf_matcher))
+        return (ref.name, get_repo_version(repo, conf_matcher, version_type=version_type))
 
     return map(__wrap_fn, non_symbolic_refs)
 
 #
-# Main entry point, called with a project "configuration"
+# Main entry point(s), called with a project "configuration"
 #
-
-def get_fork_matcher(conf, fork_conf):
-    if "matcher" in fork_conf:
-        return fork_conf["matcher"]
-    if "matcher" in conf:
-        return conf["matcher"]
-    return None
-
-def get_fork_config(conf, fork_name):
-    return next(filter(lambda x: x.get("name") == fork_name, conf.get("forks")))
 
 def find_repo_version(conf, fork_name):
     """
@@ -225,27 +202,24 @@ def find_repo_version(conf, fork_name):
     # Find the fork conf with the specified name
     fork_conf = get_fork_config(conf, fork_name)
 
-    conf_source = fork_conf["source"]
-    src = init_source(conf_source)
+    src = init_source(fork_conf)
     src_repo = src.get("repo")
 
     conf_matcher = get_fork_matcher(conf, fork_conf)
     src_remote_branch = src.get("branch")
     remote_branches = [src_remote_branch] if src_remote_branch is not None else None
-    return get_all_repo_versions(src_repo, conf_matcher, remote_branch_names=remote_branches)
+    return get_all_repo_versions(src_repo, conf_matcher, version_type=conf["version_type"], remote_branch_names=remote_branches)
 
 def find_repo_fork_upstream_version(conf, upstream_fork_name, fork_fork_name):
     conf_upstream = get_fork_config(conf, upstream_fork_name)
-    conf_source_u = conf_upstream["source"]
-    upstream_src = init_source(conf_source_u)
+    upstream_src = init_source(conf_upstream)
     upstream_repo = upstream_src.get("repo")
 
     conf_fork = get_fork_config(conf, fork_fork_name)
-    conf_source_f = conf_fork["source"]
-    fork_src = init_source(conf_source_f)
+    fork_src = init_source(conf_fork)
     fork_repo = fork_src.get("repo")
 
     diverge_commit = get_repo_fork_point(upstream_repo, fork_repo)
     #print("Fork diverged at:", diverge_commit)
-    checkout_commit(upstream_src.get("repo"), diverge_commit)
-    return (diverge_commit, get_repo_version(upstream_src.get("repo"), conf_upstream.get("matcher")))
+    checkout_commit(upstream_repo, diverge_commit)
+    return (diverge_commit, get_repo_version(upstream_repo, get_fork_matcher(conf, conf_upstream), version_type=conf["version_type"]))

@@ -22,6 +22,31 @@ def empty_dir(path):
         shutil.rmtree(path)
     os.makedirs(path, exist_ok=True)
 
+def commit_in_branch(repo, branch, commit):
+    """
+    Returns True if the Git `commit` is contained within the `branch`. False otherwise.
+    """
+    branch_commit = branch.peel(pygit2.Commit)
+    return repo.descendant_of(branch_commit.id, commit.id)
+
+def get_origin_branch_ref(repo, branch_name, origin=None):
+    remote_origin = None
+
+    lookup_origin = origin or "origin"
+
+    if lookup_origin in repo.remotes:
+        remote_origin = origin
+    elif origin is not None:
+        raise RuntimeError(f"remote {origin} is not a remote in this repository")
+    else:
+        remote_origin = repo.remotes[0]
+
+    ref_name = f"{remote_origin.name}/{branch_name}"
+    if ref_name in repo.branches.remote:
+        return repo.branches.remote.get(ref_name)
+    else:
+        raise RuntimeError(f"ref {ref_name} does not exist in this repository")
+
 def checkout_remote_branch(repo, remote_branch):
     refname = remote_branch.name
 
@@ -29,7 +54,7 @@ def checkout_remote_branch(repo, remote_branch):
         raise RuntimeError(f"cannot checkout. {refname} is a symbolic ref")
 
     # Extract branch name (main)
-    short_name = refname.split("/")[-1]
+    short_name = refname.split("/")[-1] # TODO: this will break if the branch name contains a "/"
     local_refname = f"refs/heads/{short_name}"
 
     # Create local branch if it doesn't exist
