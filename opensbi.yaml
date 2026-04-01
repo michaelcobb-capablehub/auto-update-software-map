@@ -26,13 +26,19 @@ buildingFromSource: "Please keep an eye out for our [blog](/blog/) as we will so
 software:
   - arch: "riscv64c"
     releases:
-     - version: "669eba1 (codasip-cheri-riscv)"
+     - version_hash: "669eba10526ea9fd2f0442e0bb9aab433f3fb59a"
+       version_short_hash: "669eba1"
+       version_branch: "codasip-cheri-riscv"
        version_date: 2025-11-14
        version_url: "https://github.com/CHERI-Alliance/opensbi/commit/669eba10526ea9fd2f0442e0bb9aab433f3fb59a"
+       version_repo: "https://github.com/CHERI-Alliance/opensbi.git"
        latest: true
        upstream_version: "1.5"
+       upstream_hash: "43cace6c3671e5172d0df0a8963e552bb04b7b20"
+       upstream_short_hash: "43cace6"
        upstream_date: 2024-08-02
        upstream_url: "https://github.com/riscv-software-src/opensbi/commit/43cace6c3671e5172d0df0a8963e552bb04b7b20"
+       upstream_repo: "https://github.com/riscv-software-src/opensbi.git"
        images: 
          - label: "Source"
            link: "https://github.com/CHERI-Alliance/opensbi/commit/669eba10526ea9fd2f0442e0bb9aab433f3fb59a"
