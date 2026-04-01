@@ -12,7 +12,6 @@ def get_config():
                 "source": {
                     "git": {
                         "remote": "https://github.com/riscv-software-src/opensbi.git",
-                        "checkout_dir": "upstream_opensbi"
                     }
                 },
                 "matcher": {
@@ -28,7 +27,6 @@ def get_config():
                     "git": {
                         "remote": "https://github.com/CHERI-Alliance/opensbi.git",
                         "branch": "codasip-cheri-riscv",
-                        "checkout_dir": "opensbi"
                     }
                 },
                 "matcher": {

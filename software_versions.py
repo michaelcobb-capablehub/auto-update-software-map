@@ -9,8 +9,6 @@ from version import *
 #DEBUG = True
 DEBUG = False
 
-CHECKOUT_SUBDIR="repos"
-
 #
 # Common helper functions
 #
@@ -153,11 +151,8 @@ def init_source(conf):
         git_source = conf_source["git"]
         branch = git_source.get("branch")
         remote = git_source.get("remote")
-        # TODO: Should probably use the repo name to decide where to clone the git repo, just like real git does
-        checkout_dir = None
-        if "checkout_dir" in git_source:
-            checkout_dir = os.path.join(os.path.curdir, CHECKOUT_SUBDIR or "", git_source.get("checkout_dir"))
-        repo = init_git_repo(remote, checkout_dir, branch)
+
+        repo = init_git_repo(remote, branch)
         return { "repo": repo, "branch": branch, "remote": remote }
     else:
         raise RuntimeError(f"Error: No valid sources in: {list(conf_source.keys())}")

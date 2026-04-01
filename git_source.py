@@ -2,14 +2,22 @@
 
 import os
 import shutil
+from urllib import parse as urllib_parse
 
 import pygit2
+
+CHECKOUT_SUBDIR="repos"
 
 # Skip doing a fresh clone of the repo
 SKIP_CLONE = True
 
-# Subdirectory under which repositories will be checked out
-DEFAULT_CLONE_DIR = "test_git"
+def repo_url_to_checkout_path(repo_url):
+    parts = urllib_parse.urlsplit(repo_url)
+    path = parts.path.strip("/")
+
+    for c in "./~":
+        path = path.replace(c, "_")
+    return path
 
 def empty_dir(path):
     if len(path) == 0 or path == "." or os.path.abspath(path) == os.path.abspath(os.path.curdir):
@@ -74,12 +82,14 @@ def checkout_commit(repo, commit):
     repo.set_head(commit.id)
     repo.checkout_tree(commit, strategy=pygit2.GIT_CHECKOUT_FORCE)
 
-def init_git_repo(repo_url, checkout_path, branch=None):
+def init_git_repo(repo_url, branch=None):
     repo = None
+    checkout_dir = repo_url_to_checkout_path(repo_url)
+    checkout_path = os.path.join(os.path.curdir, CHECKOUT_SUBDIR, checkout_dir)
     if not SKIP_CLONE or not os.path.isdir(checkout_path):
         empty_dir(checkout_path)
         print(f"Cloning git repository {repo_url} into {checkout_path}...")
-        repo = pygit2.clone_repository(repo_url, checkout_path or DEFAULT_CLONE_DIR, checkout_branch=branch)
+        repo = pygit2.clone_repository(repo_url, checkout_path, checkout_branch=branch)
         print("Done")
     else:
         repo = pygit2.Repository(checkout_path)
