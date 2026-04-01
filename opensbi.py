@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from main import *
+from software_versions import *
 
 def get_config():
     return {
