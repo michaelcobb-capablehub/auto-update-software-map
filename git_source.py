@@ -45,6 +45,10 @@ def checkout_remote_branch(repo, remote_branch):
     # Checkout working tree
     repo.checkout(local_branch)
 
+def checkout_commit(repo, commit):
+    repo.set_head(commit.id)
+    repo.checkout_tree(commit, strategy=pygit2.GIT_CHECKOUT_FORCE)
+
 def init_git_repo(repo_url, checkout_path, branch=None):
     repo = None
     if not SKIP_CLONE or not os.path.isdir(checkout_path):
