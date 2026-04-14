@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import re
-import pygit2
+#import pygit2
 import os
 
 #
@@ -16,7 +16,7 @@ def __collect_match_group(groupindex, match):
     """
     return { k: match.group(v) for k, v in groupindex.items() }
 
-def __match_file(repo, file_path, matchers):
+def __match_file(source, file_path, matchers):
     """
     Matches each line of the file `file_path` within the Git repository `repo` by the array of regexs in `matchers`.
     Each match is converted to a dict using `__collect_match_group()` then all matches are flattened into a single dict.
@@ -24,10 +24,10 @@ def __match_file(repo, file_path, matchers):
     Returns a tuple containing:
         (current commit object, regex match).
     """
-    abspath = os.path.join(repo.workdir, file_path)
+    abspath = os.path.join(source.get_workdir(), file_path)
     matches = []
 
-    commit_ref = repo.head.peel(pygit2.Commit)
+    commit_ref = source.get_current_commit_ref()
 
     try:
         with open(abspath, "r") as f:
@@ -48,7 +48,7 @@ def __match_file(repo, file_path, matchers):
         all_matches.update(m)
     return (commit_ref, all_matches)
 
-def __latest_matching_tag(repo, regex):
+def __latest_matching_tag(source, regex):
     """
     Walks commits in the current Git `repo` in topological order, and finds the most recent commit which
     includes a tag matching the given `regex`.
@@ -58,23 +58,31 @@ def __latest_matching_tag(repo, regex):
     """
     result = None
 
-    tag_map = {}
-    for ref in repo.references.iterator(pygit2.GIT_REFERENCES_TAGS):
-        commit = ref.peel(pygit2.Commit)
-        tag_map.setdefault(commit, []).append(ref)
+    tag_map = source.get_repo_tags()
 
-    for commit in repo.walk(repo.head.peel(pygit2.Commit).id, pygit2.GIT_SORT_TOPOLOGICAL):
-        is_match = False
+    #for commit in repo.walk(repo.head.peel(pygit2.Commit).id, pygit2.GIT_SORT_TOPOLOGICAL):
+    #    is_match = False
+    #    if commit in tag_map:
+    #        commit_tags = tag_map[commit]
+    #        for tag in commit_tags:
+    #            match = regex.match(tag.name)
+    #            if match:
+    #                result = (commit, __collect_match_group(regex.groupindex, match))
+    #                is_match = True
+    #                break
+    #    if is_match:
+    #        break
+
+    def __tag_matcher(commit):
         if commit in tag_map:
             commit_tags = tag_map[commit]
             for tag in commit_tags:
                 match = regex.match(tag.name)
                 if match:
-                    result = (commit, __collect_match_group(regex.groupindex, match))
-                    is_match = True
-                    break
-        if is_match:
-            break
+                    return (commit, __collect_match_group(regex.groupindex, match))
+        return None
+
+    return source.walk_commit_tree_from_head(__tag_matcher)
 
     return result
 

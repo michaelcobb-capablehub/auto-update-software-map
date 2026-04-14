@@ -2,7 +2,10 @@
 
 import os
 import shutil
-from urllib import parse as urllib_parse
+import urllib as urllib
+import re
+import time
+from abc import *
 
 import pygit2
 
@@ -11,96 +14,193 @@ CHECKOUT_SUBDIR="repos"
 # Skip doing a fresh clone of the repo
 SKIP_CLONE = True
 
-def repo_url_to_checkout_path(repo_url):
-    parts = urllib_parse.urlsplit(repo_url)
+def url_to_safe_path(url, suffix):
+    illegal_chars_regex = "[./~]"
+    safe_char = "_"
+
+    parts = urllib.parse.urlsplit(url)
+
     path = parts.path.strip("/")
+    path = re.sub(".git$", "", path)
+    path = re.sub(illegal_chars_regex, safe_char, path)
 
-    illegal_chars = "./~"
-    for c in illegal_chars:
-        path = path.replace(c, "_")
-    return path
+    return path + suffix
 
-def commit_in_branch(repo, branch, commit):
-    """
-    Returns True if the Git `commit` is contained within the `branch`. False otherwise.
-    """
-    branch_commit = branch.peel(pygit2.Commit)
-    return repo.descendant_of(branch_commit.id, commit.id)
+def make_git_source(url, opts=None):
+    url_parts = urllib.parse.urlparse(url)
+    git_provider = url_parts.netloc
 
-def get_origin_branch_ref(repo, branch_name, origin=None):
-    remote_origin = None
+    checkout_branch = opts.get("branch") if opts is not None else None
 
-    if branch_name in repo.branches.remote:
-        return repo.branches.remote.get(branch_name)
-
-    if origin is not None and origin in repo.remotes:
-        ref_name = f"{remote_origin.name}/{branch_name}"
-        if ref_name not in repo.branches.remote:
-            raise RuntimeError(f"ref {ref_name} does not exist in this repository")
-        return repo.branches.get(ref_name)
+    if git_provider == "github.com":
+        git = GitHubGitSource(url)
+        return git
     else:
-        for o in repo.remotes:
-            ref_name = f"{o.name}/{branch_name}"
-            if ref_name in repo.branches.remote:
-                return repo.branches.get(ref_name)
-        raise RuntimeError(f"ref {branch_name} does not exist in any remotes in this repository")
+        raise RuntimeError(f"Unknown Git provider: {git_provider}")
 
-def get_repo_remote_branches(repo):
-    branch_refs = map(lambda x: repo.branches.remote.get(x), repo.branches.remote)
-    non_symbolic_refs = filter(lambda x: x.type != pygit2.enums.ReferenceType.SYMBOLIC, branch_refs)
-    return non_symbolic_refs
+class Source():
+    def __init__(self):
+        pass
 
-def checkout_remote_branch(repo, remote_branch):
-    if remote_branch.type == pygit2.enums.ReferenceType.SYMBOLIC:
-        raise RuntimeError(f"cannot checkout. {remote_branch.name} is a symbolic ref")
+class GitSource(Source):
+    def __init__(self, git_url, branch=None):
+        Source.__init__(self)
+        self.git_url = git_url
 
-    refname = remote_branch.shorthand
+        self.git_repo = None
+        self.checkout_path = os.path.join(os.path.curdir, CHECKOUT_SUBDIR, url_to_safe_path(self.git_url, "_git"))
+        if os.path.isdir(self.checkout_path):
+            repo = pygit2.Repository(self.checkout_path)
+            remote_urls = [x.url for x in repo.remotes]
+            #assert(repo_url in remote_urls)
+            assert(self.git_url in remote_urls)
+        else:
+            os.makedirs(self.checkout_path, exist_ok=True)
+            print(f"Cloning git repository {self.git_url} into {self.checkout_path}...")
+            repo = pygit2.clone_repository(self.git_url, self.checkout_path, checkout_branch=branch)
+            print("Done")
+        
+        self.git_repo = repo
 
-    # Extract branch name (main)
-    short_name = refname[refname.index("/") + 1:] # strip off leading "origin/"
-    local_refname = f"refs/heads/{short_name}"
+        print(f"Git repository {self.git_url} checked out in {self.checkout_path}")
 
-    # Create local branch if it doesn't exist
-    try:
-        local_branch = repo.lookup_reference(local_refname)
-    except KeyError:
-        commit = remote_branch.peel(pygit2.Commit)
-        local_branch = repo.create_branch(short_name, commit)
+        # make sure we checkout the required branch
+        if branch is not None:
+            #origin_name = next((r.name for r in repo.remotes), None)
+            #if origin_name is None:
+            #    raise RuntimeError(f"Could not find a remote orign")
+            #remote_branch = repo.branches.get(origin_name + "/" + branch)
+            remote_branch = self.get_origin_branch_ref(branch)
+            self.checkout_remote_branch(remote_branch)
 
-        # track upstream origin
-        local_branch.upstream = remote_branch
+    def get_workdir(self):
+        return self.git_repo.workdir
 
-    # Checkout working tree
-    repo.checkout(local_branch)
+    def commit_in_branch(self, branch, commit):
+        """
+        Returns True if the Git `commit` is contained within the `branch`. False otherwise.
+        """
+        branch_commit = branch.peel(pygit2.Commit)
+        return self.git_repo.descendant_of(branch_commit.id, commit.id)
 
-def checkout_commit(repo, commit):
-    repo.set_head(commit.id)
-    repo.checkout_tree(commit, strategy=pygit2.GIT_CHECKOUT_FORCE)
+    def get_origin_branch_ref(self, branch_name, origin=None):
+        remote_origin = None
 
-def init_git_repo(repo_url, branch=None):
-    repo = None
-    checkout_dir = repo_url_to_checkout_path(repo_url)
-    checkout_path = os.path.join(os.path.curdir, CHECKOUT_SUBDIR, checkout_dir)
-    if os.path.isdir(checkout_path):
-        repo = pygit2.Repository(checkout_path)
-        remote_urls = [x.url for x in repo.remotes]
-        assert(repo_url in remote_urls)
-    else:
-        os.makedirs(checkout_path, exist_ok=True)
-        print(f"Cloning git repository {repo_url} into {checkout_path}...")
-        repo = pygit2.clone_repository(repo_url, checkout_path, checkout_branch=branch)
-        print("Done")
-    
-    print(f"Git repository {repo_url} checked out in {checkout_path}")
+        if branch_name in self.git_repo.branches.remote:
+            return self.git_repo.branches.remote.get(branch_name)
 
-    # make sure we checkout the required branch
-    if branch is not None:
-        origin_name = next((r.name for r in repo.remotes), None)
-        if origin_name is None:
-            raise RuntimeError(f"Could not find a remote orign")
-        remote_branch = repo.branches.get(origin_name + "/" + branch)
-        checkout_remote_branch(repo, remote_branch)
-    return repo
+        if origin is not None and origin in self.git_repo.remotes:
+            ref_name = f"{remote_origin.name}/{branch_name}"
+            if ref_name not in self.git_repo.branches.remote:
+                raise RuntimeError(f"ref {ref_name} does not exist in this repository")
+            return self.git_repo.branches.get(ref_name)
+        else:
+            for o in self.git_repo.remotes:
+                ref_name = f"{o.name}/{branch_name}"
+                if ref_name in self.git_repo.branches.remote:
+                    return self.git_repo.branches.get(ref_name)
+            raise RuntimeError(f"ref {branch_name} does not exist in any remotes in this repository")
+
+    def get_repo_fork_point(self, fork):
+        """
+        Returns the first commit from the currently checked-out branch in `fork` that also appears in
+        the currently checked-out branch in `upstream`.
+
+        This represents the point at which `fork` divereged from `upstream`.
+        """
+        # Assert that "fork" is also an instance of GitSource
+        assert isinstance(fork, GitSource)
+
+        for commit_frk in fork.git_repo.walk(fork.git_repo.head.target, pygit2.enums.SortMode.TOPOLOGICAL):
+            commit_ups = self.git_repo.get(commit_frk.id)
+            if commit_ups is not None:
+                return commit_ups
+        return None
+
+    def get_repo_remote_branches(self):
+        branch_refs = map(lambda x: self.git_repo.branches.remote.get(x), self.git_repo.branches.remote)
+        non_symbolic_refs = filter(lambda x: x.type != pygit2.enums.ReferenceType.SYMBOLIC, branch_refs)
+        return non_symbolic_refs
+
+    def checkout_remote_branch(self, remote_branch):
+        if remote_branch.type == pygit2.enums.ReferenceType.SYMBOLIC:
+            raise RuntimeError(f"cannot checkout. {remote_branch.name} is a symbolic ref")
+
+        refname = remote_branch.shorthand
+
+        # Extract branch name
+        short_name = refname[refname.index("/") + 1:] # strip off leading "origin/"
+        local_refname = f"refs/heads/{short_name}"
+
+        # Create local branch if it doesn't exist
+        try:
+            local_branch = self.git_repo.lookup_reference(local_refname)
+        except KeyError:
+            commit = remote_branch.peel(pygit2.Commit)
+            local_branch = self.git_repo.create_branch(short_name, commit)
+
+            # track upstream origin
+            local_branch.upstream = remote_branch
+
+        # Checkout working tree
+        self.git_repo.checkout(local_branch, strategy=pygit2.enums.CheckoutStrategy.FORCE | pygit2.enums.CheckoutStrategy.RECREATE_MISSING)
+
+    def checkout_commit(self, commit):
+        self.git_repo.set_head(commit.id)
+        self.git_repo.checkout_tree(commit, strategy=pygit2.enums.CheckoutStrategy.FORCE | pygit2.enums.CheckoutStrategy.RECREATE_MISSING)
+
+    def get_current_commit_ref(self):
+        return self.git_repo.head.peel(pygit2.Commit)
+
+    def get_repo_tags(self):
+        tag_map = {}
+        for ref in self.git_repo.references.iterator(pygit2.GIT_REFERENCES_TAGS):
+            commit = ref.peel(pygit2.Commit)
+            tag_map.setdefault(commit, []).append(ref)
+        return tag_map
+
+    def walk_commit_tree_from_head(self, callback):
+        for commit in self.git_repo.walk(self.git_repo.head.peel(pygit2.Commit).id, pygit2.GIT_SORT_TOPOLOGICAL):
+            result = callback(commit)
+            if result is not None:
+                return result
+
+    @abstractmethod
+    def get_url_for_commit(self, commit):
+        return NotImplemented
+
+    def get_metadata_for_branch_commit(self, commit):
+        return NotImplemented
+
+class GitHubGitSource(GitSource):
+    def __init__(self, git_url):
+        GitSource.__init__(self, git_url)
+
+    def get_url_for_commit(self, commit):
+        return "TODO"
+
+    def get_metadata_for_branch(self, branch):
+        return {
+            "name": branch.shorthand
+        }
+    def get_metadata_for_commit(self, commit):
+        commit_datetime = time.gmtime(commit.commit_time)
+        return {
+            "short_id": commit.short_id,
+            "id": commit.id,
+            "url": self.get_url_for_commit(commit),
+            "datetime": commit_datetime
+        }
+
+
+
+
+
+
+
+
+
+
 
 #
 # Debug
