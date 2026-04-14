@@ -15,20 +15,10 @@ def repo_url_to_checkout_path(repo_url):
     parts = urllib_parse.urlsplit(repo_url)
     path = parts.path.strip("/")
 
-    for c in "./~":
+    illegal_chars = "./~"
+    for c in illegal_chars:
         path = path.replace(c, "_")
     return path
-
-def empty_dir(path):
-    if len(path) == 0 or path == "." or os.path.abspath(path) == os.path.abspath(os.path.curdir):
-        raise RuntimeError(f"Refusing to touch path: {path}")
-
-    if os.path.isfile(path):
-        raise RuntimeError(f"{path} is a file")
-
-    if os.path.isdir(path):
-        shutil.rmtree(path)
-    os.makedirs(path, exist_ok=True)
 
 def commit_in_branch(repo, branch, commit):
     """
@@ -40,29 +30,34 @@ def commit_in_branch(repo, branch, commit):
 def get_origin_branch_ref(repo, branch_name, origin=None):
     remote_origin = None
 
-    lookup_origin = origin or "origin"
+    if branch_name in repo.branches.remote:
+        return repo.branches.remote.get(branch_name)
 
-    if lookup_origin in repo.remotes:
-        remote_origin = origin
-    elif origin is not None:
-        raise RuntimeError(f"remote {origin} is not a remote in this repository")
+    if origin is not None and origin in repo.remotes:
+        ref_name = f"{remote_origin.name}/{branch_name}"
+        if ref_name not in repo.branches.remote:
+            raise RuntimeError(f"ref {ref_name} does not exist in this repository")
+        return repo.branches.get(ref_name)
     else:
-        remote_origin = repo.remotes[0]
+        for o in repo.remotes:
+            ref_name = f"{o.name}/{branch_name}"
+            if ref_name in repo.branches.remote:
+                return repo.branches.get(ref_name)
+        raise RuntimeError(f"ref {branch_name} does not exist in any remotes in this repository")
 
-    ref_name = f"{remote_origin.name}/{branch_name}"
-    if ref_name in repo.branches.remote:
-        return repo.branches.remote.get(ref_name)
-    else:
-        raise RuntimeError(f"ref {ref_name} does not exist in this repository")
+def get_repo_remote_branches(repo):
+    branch_refs = map(lambda x: repo.branches.remote.get(x), repo.branches.remote)
+    non_symbolic_refs = filter(lambda x: x.type != pygit2.enums.ReferenceType.SYMBOLIC, branch_refs)
+    return non_symbolic_refs
 
 def checkout_remote_branch(repo, remote_branch):
-    refname = remote_branch.name
-
     if remote_branch.type == pygit2.enums.ReferenceType.SYMBOLIC:
-        raise RuntimeError(f"cannot checkout. {refname} is a symbolic ref")
+        raise RuntimeError(f"cannot checkout. {remote_branch.name} is a symbolic ref")
+
+    refname = remote_branch.shorthand
 
     # Extract branch name (main)
-    short_name = refname.split("/")[-1] # TODO: this will break if the branch name contains a "/"
+    short_name = refname[refname.index("/") + 1:] # strip off leading "origin/"
     local_refname = f"refs/heads/{short_name}"
 
     # Create local branch if it doesn't exist
@@ -86,17 +81,18 @@ def init_git_repo(repo_url, branch=None):
     repo = None
     checkout_dir = repo_url_to_checkout_path(repo_url)
     checkout_path = os.path.join(os.path.curdir, CHECKOUT_SUBDIR, checkout_dir)
-    if not SKIP_CLONE or not os.path.isdir(checkout_path):
-        empty_dir(checkout_path)
+    if os.path.isdir(checkout_path):
+        repo = pygit2.Repository(checkout_path)
+        remote_urls = [x.url for x in repo.remotes]
+        assert(repo_url in remote_urls)
+    else:
+        os.makedirs(checkout_path, exist_ok=True)
         print(f"Cloning git repository {repo_url} into {checkout_path}...")
         repo = pygit2.clone_repository(repo_url, checkout_path, checkout_branch=branch)
         print("Done")
-    else:
-        repo = pygit2.Repository(checkout_path)
+    
+    print(f"Git repository {repo_url} checked out in {checkout_path}")
 
-    if SKIP_CLONE:
-        remote_urls = [x.url for x in repo.remotes]
-        assert(repo_url in remote_urls)
     # make sure we checkout the required branch
     if branch is not None:
         origin_name = next((r.name for r in repo.remotes), None)

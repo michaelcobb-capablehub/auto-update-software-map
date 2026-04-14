@@ -12,10 +12,10 @@ class SemanticVersion(Version):
         self._patch = int(patch) if patch else None
 
     @staticmethod
-    def from_str(s):
+    def parse(s):
         parts = s.split(".")
         if len(parts) < 2 or len(parts) > 3:
-            raise RuntimeError(f"{s}: Not a valid semantic version string")
+            raise RuntimeError(f"'{s}': Unable to parse semantic version string")
         return SemanticVersion(*parts)
 
     def __str__(self):
