@@ -167,22 +167,13 @@ class GitSource(Source):
 
     @abstractmethod
     def get_url_for_commit(self, commit):
-        return NotImplemented
-
-    def get_metadata_for_branch_commit(self, commit):
-        return NotImplemented
-
-class GitHubGitSource(GitSource):
-    def __init__(self, git_url):
-        GitSource.__init__(self, git_url)
-
-    def get_url_for_commit(self, commit):
-        return "TODO"
+        raise NotImplementedError("Abstract method")
 
     def get_metadata_for_branch(self, branch):
         return {
             "name": branch.shorthand
         }
+
     def get_metadata_for_commit(self, commit):
         commit_datetime = time.gmtime(commit.commit_time)
         return {
@@ -192,42 +183,13 @@ class GitHubGitSource(GitSource):
             "datetime": commit_datetime
         }
 
+class GitHubGitSource(GitSource):
+    def __init__(self, git_url):
+        GitSource.__init__(self, git_url)
 
-
-
-
-
-
-
-
-
-
-#
-# Debug
-#
-
-def print_repo_state(repo):
-    def print_branch_stats(branch):
-        if branch is None:
-            return "(None)"
-
-        s = [
-                '*' if branch.is_checked_out() else '',
-                'H' if branch.is_head() else '',
-            ]
-        ref = branch.resolve()
-        return f"{branch.branch_name}[{''.join(s)}] ({ref.name}) @ {ref.peel().id}"
-
-
-    print("Local branches:")
-    for branch_name in repo.branches.local:
-        b = repo.branches.local.get(branch_name)
-        ub = b.upstream
-        print(f"\t{print_branch_stats(b)} --> {print_branch_stats(ub)}")
-
-    print("Remote branches:")
-    for branch_name in repo.branches.remote:
-        b = repo.branches.remote.get(branch_name)
-        print(f"\t{print_branch_stats(b)}")
-
+    def get_url_for_commit(self, commit):
+        parts = urllib.parse.urlparse(self.git_url)
+        path_strip = re.sub(".git$", "", parts.path)
+        commit_path = f"{path_strip}/commit/{commit.id}"
+        return urllib.parse.urlunparse((parts.scheme, parts.netloc, commit_path, parts.params, parts.query, parts.fragment))
 

@@ -4,7 +4,6 @@ import sys
 import time
 
 from ruamel.yaml import YAML
-import urllib as urllib
 
 from software_versions import *
 import methods
@@ -25,15 +24,6 @@ def map_method(method):
 
 def filter_applicable_version_methods(all_methods, applicable):
     return filter(lambda x: x["method"] in applicable if applicable is not None else True, all_methods)
-
-def make_url_for_commit(repo_url, commit):
-    parts = urllib.parse.urlparse(repo_url)
-    if parts.netloc == "github.com":
-        path_strip = re.sub(".git$", "", parts.path)
-        commit_path = f"{path_strip}/commit/{commit.id}"
-    else:
-        raise RuntimeError(f"Unknown git host: {parts.netloc}")
-    return urllib.parse.urlunparse((parts.scheme, parts.netloc, commit_path, parts.params, parts.query, parts.fragment))
 
 def format_datetime_date(datetime):
     return time.strftime("%Y-%m-%d", datetime)
