@@ -2,6 +2,7 @@
 
 import sys
 import time
+import argparse
 
 from ruamel.yaml import YAML
 
@@ -125,9 +126,17 @@ def update_software_release(arch, release, version_methods):
 
 
 def main():
-    project_yaml_file = sys.argv[1]
+    parser = argparse.ArgumentParser(
+                    description="Updates the software-map .yaml file with updated version information")
+    parser.add_argument("filename")
+    parser.add_argument("-o", "--output")
+    args = parser.parse_args()
 
-    with open(project_yaml_file) as f:
+    input_yaml_file = args.filename
+    output_yaml_file = args.output if args.output is not None else args.filename
+
+    print(f"Checking {input_yaml_file}...")
+    with open(input_yaml_file) as f:
         conf = yaml.load(f)
         software = conf.get("software")
 
@@ -142,8 +151,8 @@ def main():
             for release in releases:
                 update_software_release(arch, release, version_methods)
 
-        out_file = os.path.basename(project_yaml_file)
-        with open(out_file + ".new", "w") as o:
+        print(f"Writing new yaml to {output_yaml_file}...")
+        with open(output_yaml_file, "w") as o:
             new_yaml = yaml.dump(conf, o)
 
 
