@@ -112,13 +112,13 @@ def update_software_release(arch, release, version_methods):
     print("\t", f"Release:")
     print("\t\t", f"Repo: '{fork_repo_url}'")
     print("\t\t\t", f"Commit: {current_fork_hash} ({current_fork_branch}) @ {current_fork_date}")
-    print("\t\t\t", f"--> New Commit: {new_version.get("version_hash")} ({new_version.get("version_branch")}) @ {new_version.get("version_date")}")
+    print("\t\t\t", f"--> New Commit: {new_version.get('version_hash')} ({new_version.get('version_branch')}) @ {new_version.get('version_date')}")
     print("\t", f"Upstream:")
     print("\t\t", f"Repo: '{upstream_repo_url}'")
     print("\t\t\t", f"Commit: {current_upstream_hash} ({current_upstream_branch}) @ {current_upstream_date}")
-    print("\t\t\t", f"--> New Commit: {new_upstream_version.get("upstream_hash")} ({new_upstream_version.get("upstream_branch")}) @ {new_upstream_version.get("upstream_date")}")
+    print("\t\t\t", f"--> New Commit: {new_upstream_version.get('upstream_hash')} ({new_upstream_version.get('upstream_branch')}) @ {new_upstream_version.get('upstream_date')}")
     print("\t\t\t", f"Version: '{upstream_version}'")
-    print("\t\t\t", f"--> New Version: '{new_upstream_version.get("upstream_version")}'")
+    print("\t\t\t", f"--> New Version: '{new_upstream_version.get('upstream_version')}'")
 
     # Update the "release" dict with new version information
     release.update(new_version)
