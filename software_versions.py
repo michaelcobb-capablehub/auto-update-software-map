@@ -22,11 +22,13 @@ def init_source(source_type, url, source_opts=None):
 
 def get_repo_version(src_repo, version_matcher):
     r = version_matcher["fn"](src_repo, *version_matcher["args"])
-    version_type = version_matcher.get("version_type")
     if r is None:
         return None
-    commit, version = r
-    return (commit, make_version(version_type, version) if version is not None else None)
+    commit, raw_version = r
+    version_type = version_matcher.get("version_type")
+    version = make_version(version_type, raw_version) if raw_version is not None else None
+    logging.info(f"Matched commit {commit.id} to version '{version}' using method '{version_matcher['method']}'")
+    return (commit, version)
 
 def find_repo_version(src_repo, version_matcher):
     for method in version_matcher:
