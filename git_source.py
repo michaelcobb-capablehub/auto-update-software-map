@@ -59,6 +59,7 @@ class Source():
 class GitSource(Source):
     def __init__(self, git_url, checkout_branch=None, *args):
         Source.__init__(self, git_url, *args)
+        self.cloned_this_session = False
 
         self.git_repo = None
         self.checkout_path = os.path.join(os.path.curdir, CHECKOUT_SUBDIR, url_to_safe_path(self.src_url, "_git"))
@@ -77,6 +78,15 @@ class GitSource(Source):
         self.git_repo = repo
 
         logging.info(f"Git repository {self.src_url} checked out in {self.checkout_path}")
+
+        if not self.cloned_this_session:
+            # perform "git fetch" on the repo to pull in any latest changes
+            self.fetch()
+            # merge changes from upstream into all local branches
+            for branch_name in self.git_repo.branches.local:
+                branch = self.git_repo.branches.get(branch_name)
+                self.checkout_local_branch(branch)
+                self.pull_current_branch()
 
         # make sure we checkout the required branch
         if checkout_branch is not None:
@@ -136,6 +146,60 @@ class GitSource(Source):
         non_symbolic_refs = filter(lambda x: x.type != pygit2.enums.ReferenceType.SYMBOLIC, branch_refs)
         return non_symbolic_refs
 
+    def fetch(self, remote_name="origin"):
+        remote = self.git_repo.remotes[remote_name]
+        logging.info(f"Fetching remote '{remote.name}'")
+        remote.fetch()
+
+    def pull_current_branch(self, remote_name="origin"):
+        #self.fetch(remote_name)
+
+        if self.git_repo.head_is_detached:
+            raise RuntimeError("Not on a branch (detached HEAD)")
+
+        branch = self.git_repo.branches[self.git_repo.head.shorthand]
+        upstream = branch.upstream
+
+        if upstream is None:
+            raise RuntimeError(f"Branch '{branch.shorthand}' has no upstream")
+
+        local_commit = self.git_repo.revparse_single(branch.name)
+        remote_commit = self.git_repo.revparse_single(upstream.name)
+
+        logging.info(f"Pulling '{upstream.shorthand}'...")
+        # Check if already up-to-date
+        if self.git_repo.descendant_of(local_commit.id, remote_commit.id):
+            logging.info("Already up-to-date")
+            return
+
+        # Fast-forward?
+        if self.git_repo.descendant_of(remote_commit.id, local_commit.id):
+            self.git_repo.checkout_tree(remote_commit)
+            self.git_repo.set_head(upstream.name)
+            logging.info("Fast-forwarded")
+            return
+
+        # Otherwise: merge required
+        self.git_repo.merge(remote_commit.id)
+
+        if self.git_repo.index.conflicts:
+            raise RuntimeError("Merge conflicts detected")
+
+        # Create merge commit
+        tree = self.git_repo.index.write_tree()
+        self.git_repo.create_commit(
+            self.git_repo.head.name,
+            self.git_repo.default_signature,
+            self.git_repo.default_signature,
+            "Merge",
+            tree,
+            [self.git_repo.head.target, remote_commit.id],
+        )
+
+        self.git_repo.state_cleanup()
+        logging.info("Merged")
+        return
+
     def checkout_remote_branch(self, remote_branch):
         if remote_branch.type == pygit2.enums.ReferenceType.SYMBOLIC:
             raise RuntimeError(f"cannot checkout. {remote_branch.name} is a symbolic ref")
@@ -156,6 +220,10 @@ class GitSource(Source):
             # track upstream origin
             local_branch.upstream = remote_branch
 
+        # Checkout working tree
+        self.checkout_local_branch(local_branch)
+
+    def checkout_local_branch(self, local_branch):
         # Checkout working tree
         self.git_repo.checkout(local_branch, strategy=pygit2.enums.CheckoutStrategy.FORCE | pygit2.enums.CheckoutStrategy.RECREATE_MISSING)
         logging.debug(f"Checking out branch '{local_branch.shorthand}'")
