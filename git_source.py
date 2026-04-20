@@ -69,13 +69,14 @@ class GitSource(Source):
 
         else:
             os.makedirs(self.checkout_path, exist_ok=True)
-            print(f"Cloning git repository {self.git_url} into {self.checkout_path}...")
-            print("Done")
+            logging.info(f"Cloning git repository {self.src_url} into {self.checkout_path}...")
             repo = pygit2.clone_repository(self.src_url, self.checkout_path, checkout_branch=checkout_branch)
+            self.cloned_this_session = True
+            logging.info("Done")
 
         self.git_repo = repo
 
-        print(f"Git repository {self.git_url} checked out in {self.checkout_path}")
+        logging.info(f"Git repository {self.src_url} checked out in {self.checkout_path}")
 
         # make sure we checkout the required branch
         if checkout_branch is not None:
@@ -157,10 +158,12 @@ class GitSource(Source):
 
         # Checkout working tree
         self.git_repo.checkout(local_branch, strategy=pygit2.enums.CheckoutStrategy.FORCE | pygit2.enums.CheckoutStrategy.RECREATE_MISSING)
+        logging.debug(f"Checking out branch '{local_branch.shorthand}'")
 
     def checkout_commit(self, commit):
         self.git_repo.set_head(commit.id)
         self.git_repo.checkout_tree(commit, strategy=pygit2.enums.CheckoutStrategy.FORCE | pygit2.enums.CheckoutStrategy.RECREATE_MISSING)
+        logging.debug(f"Checked out commit '{commit.id}' (detached HEAD)")
 
     def get_current_commit_ref(self):
         return self.git_repo.head.peel(pygit2.Commit)

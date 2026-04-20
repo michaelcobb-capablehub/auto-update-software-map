@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
 import re
-#import pygit2
 import os
+import logging
 
 #
 # Internal versions of the "top level" functions below.
@@ -37,7 +37,7 @@ def __match_file(source, file_path, matchers):
                     if match:
                         matches.append(__collect_match_group(r.groupindex, match))
     except Exception as ex:
-        print(f"Exception while processing file: {file_path}:", ex)
+        logging.error(f"Exception while processing file: {file_path}:", ex)
 
     if len(matches) == 0:
         return None

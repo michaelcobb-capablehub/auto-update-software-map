@@ -3,11 +3,14 @@
 import sys
 import time
 import argparse
+import logging
 
 from ruamel.yaml import YAML
 
 from software_versions import *
 import methods
+
+DEFAULT_LOGLEVEL = "INFO"
 
 yaml = YAML()
 yaml.default_flow_style=False
@@ -33,10 +36,11 @@ def update_software_release_version(src_repo, fork_branch, applicable_version_me
     result = None
     src_remote_branches = src_repo.get_repo_remote_branches()
     for branch in src_remote_branches:
+        logging.info(f"Checking version of remote branch '{branch.shorthand}' in {src_repo.get_src_url()}...")
         src_repo.checkout_remote_branch(branch)
         versions = find_repo_version(src_repo, applicable_version_methods)
         if versions is None:
-            print(f"Warning: failed to find version of branch {branch.shorthand}")
+            logging.warning(f"Warning: failed to find version of branch '{branch.shorthand}'")
             if branch == fork_branch:
                 raise RuntimeError(f"No version found for branch {branch.shorthand}")
         else:
@@ -108,17 +112,17 @@ def update_software_release(arch, release, version_methods):
 
     new_upstream_version = update_software_release_upstream_version(src_repo, upstream_repo, fork_branch, upstream_branch, applicable_upstream_version_methods)
 
-    print(f"Arch: {arch}")
-    print("\t", f"Release:")
-    print("\t\t", f"Repo: '{fork_repo_url}'")
-    print("\t\t\t", f"Commit: {current_fork_hash} ({current_fork_branch}) @ {current_fork_date}")
-    print("\t\t\t", f"--> New Commit: {new_version.get('version_hash')} ({new_version.get('version_branch')}) @ {new_version.get('version_date')}")
-    print("\t", f"Upstream:")
-    print("\t\t", f"Repo: '{upstream_repo_url}'")
-    print("\t\t\t", f"Commit: {current_upstream_hash} ({current_upstream_branch}) @ {current_upstream_date}")
-    print("\t\t\t", f"--> New Commit: {new_upstream_version.get('upstream_hash')} ({new_upstream_version.get('upstream_branch')}) @ {new_upstream_version.get('upstream_date')}")
-    print("\t\t\t", f"Version: '{upstream_version}'")
-    print("\t\t\t", f"--> New Version: '{new_upstream_version.get('upstream_version')}'")
+    logging.debug(f"Arch: {arch}")
+    logging.debug("\t", f"Release:")
+    logging.debug("\t\t", f"Repo: '{fork_repo_url}'")
+    logging.debug("\t\t\t", f"Commit: {current_fork_hash} ({current_fork_branch}) @ {current_fork_date}")
+    logging.debug("\t\t\t", f"--> New Commit: {new_version.get('version_hash')} ({new_version.get('version_branch')}) @ {new_version.get('version_date')}")
+    logging.debug("\t", f"Upstream:")
+    logging.debug("\t\t", f"Repo: '{upstream_repo_url}'")
+    logging.debug("\t\t\t", f"Commit: {current_upstream_hash} ({current_upstream_branch}) @ {current_upstream_date}")
+    logging.debug("\t\t\t", f"--> New Commit: {new_upstream_version.get('upstream_hash')} ({new_upstream_version.get('upstream_branch')}) @ {new_upstream_version.get('upstream_date')}")
+    logging.debug("\t\t\t", f"Version: '{upstream_version}'")
+    logging.debug("\t\t\t", f"--> New Version: '{new_upstream_version.get('upstream_version')}'")
 
     # Update the "release" dict with new version information
     release.update(new_version)
