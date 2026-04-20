@@ -50,38 +50,40 @@ def make_git_source(url, git_provider, opts=None):
         raise RuntimeError(f"Unknown Git provider: '{git_provider}'")
 
 class Source():
-    def __init__(self):
-        pass
+    def __init__(self, src_url):
+        self.src_url = src_url
+
+    def get_src_url(self):
+        return self.src_url
 
 class GitSource(Source):
-    def __init__(self, git_url, branch=None):
-        Source.__init__(self)
-        self.git_url = git_url
+    def __init__(self, git_url, checkout_branch=None, *args):
+        Source.__init__(self, git_url, *args)
 
         self.git_repo = None
-        self.checkout_path = os.path.join(os.path.curdir, CHECKOUT_SUBDIR, url_to_safe_path(self.git_url, "_git"))
+        self.checkout_path = os.path.join(os.path.curdir, CHECKOUT_SUBDIR, url_to_safe_path(self.src_url, "_git"))
         if os.path.isdir(self.checkout_path):
             repo = pygit2.Repository(self.checkout_path)
             remote_urls = [x.url for x in repo.remotes]
-            #assert(repo_url in remote_urls)
-            assert(self.git_url in remote_urls)
+            assert(self.src_url in remote_urls)
+
         else:
             os.makedirs(self.checkout_path, exist_ok=True)
             print(f"Cloning git repository {self.git_url} into {self.checkout_path}...")
-            repo = pygit2.clone_repository(self.git_url, self.checkout_path, checkout_branch=branch)
             print("Done")
-        
+            repo = pygit2.clone_repository(self.src_url, self.checkout_path, checkout_branch=checkout_branch)
+
         self.git_repo = repo
 
         print(f"Git repository {self.git_url} checked out in {self.checkout_path}")
 
         # make sure we checkout the required branch
-        if branch is not None:
+        if checkout_branch is not None:
             #origin_name = next((r.name for r in repo.remotes), None)
             #if origin_name is None:
             #    raise RuntimeError(f"Could not find a remote orign")
             #remote_branch = repo.branches.get(origin_name + "/" + branch)
-            remote_branch = self.get_origin_branch_ref(branch)
+            remote_branch = self.get_origin_branch_ref(checkout_branch)
             self.checkout_remote_branch(remote_branch)
 
     def get_workdir(self):
@@ -195,11 +197,11 @@ class GitSource(Source):
         }
 
 class GitHubGitSource(GitSource):
-    def __init__(self, git_url):
-        GitSource.__init__(self, git_url)
+    def __init__(self, git_url, checkout_branch, *args):
+        GitSource.__init__(self, git_url, checkout_branch, *args)
 
     def get_url_for_commit(self, commit):
-        parts = urllib.parse.urlparse(self.git_url)
+        parts = urllib.parse.urlparse(self.src_url)
         path_strip = re.sub(".git$", "", parts.path)
         commit_path = f"{path_strip}/commit/{commit.id}"
         return urllib.parse.urlunparse((parts.scheme, parts.netloc, commit_path, parts.params, parts.query, parts.fragment))
