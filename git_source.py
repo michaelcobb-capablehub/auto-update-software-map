@@ -6,13 +6,16 @@ import urllib as urllib
 import re
 import time
 from abc import *
+import logging
 
 import pygit2
 
 CHECKOUT_SUBDIR="repos"
 
-# Skip doing a fresh clone of the repo
-SKIP_CLONE = True
+GIT_VCS_PROVIDERS = {
+    "github.com": "github",
+    "morello-project.org": "gitlab"
+}
 
 def url_to_safe_path(url, suffix):
     illegal_chars_regex = "[./~]"
@@ -26,17 +29,25 @@ def url_to_safe_path(url, suffix):
 
     return path + suffix
 
-def make_git_source(url, opts=None):
+def make_git_source(url, git_provider, opts=None):
     url_parts = urllib.parse.urlparse(url)
-    git_provider = url_parts.netloc
+    git_host = url_parts.netloc
 
-    checkout_branch = opts.get("branch") if opts is not None else None
+    git_provider = GIT_VCS_PROVIDERS.get(git_host)
 
-    if git_provider == "github.com":
-        git = GitHubGitSource(url)
-        return git
+    if git_provider is None:
+        raise RuntimeError(f"Unable to determine Git provider for host: '{git_host}'")
+
+    checkout_branch = None
+    if opts is not None:
+        checkout_branch = opts.get("branch")
+
+    if git_provider == "github":
+        return GitHubGitSource(url, checkout_branch)
+    elif git_provider == "gitlab":
+        return GitLabGitSource(url, checkout_branch)
     else:
-        raise RuntimeError(f"Unknown Git provider: {git_provider}")
+        raise RuntimeError(f"Unknown Git provider: '{git_provider}'")
 
 class Source():
     def __init__(self):
@@ -192,4 +203,11 @@ class GitHubGitSource(GitSource):
         path_strip = re.sub(".git$", "", parts.path)
         commit_path = f"{path_strip}/commit/{commit.id}"
         return urllib.parse.urlunparse((parts.scheme, parts.netloc, commit_path, parts.params, parts.query, parts.fragment))
+
+class GitLabGitSource(GitSource):
+    def __init__(self, git_url, checkout_branch, *args):
+        GitSource.__init__(self, git_url, checkout_branch, *args)
+
+    def get_url_for_commit(self, commit):
+        raise NotImplementedError()
 

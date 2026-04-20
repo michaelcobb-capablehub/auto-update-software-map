@@ -6,16 +6,7 @@ import re
 from git_source import *
 from version import *
 
-#
-# Whole repository operations
-#
-
-
-#
-# Initialisation functions - for handling the configurations of a particular project
-#
-
-def init_source(type, url, source_opts=None):
+def init_source(source_type, url, source_opts=None):
     """
     Handles the "source" part of the project's configuration.
     Currently accepted sources are
@@ -23,10 +14,11 @@ def init_source(type, url, source_opts=None):
 
     Returns the pygit2 object that represents the Git repository
     """
-    if type == "git":
+
+    if source_type == "git":
         return make_git_source(url, source_opts)
     else:
-        raise RuntimeError(f"Invalid source type: {type}")
+        raise RuntimeError(f"Invalid source type: {source_type}")
 
 def get_repo_version(src_repo, version_matcher):
     r = version_matcher["fn"](src_repo, *version_matcher["args"])
