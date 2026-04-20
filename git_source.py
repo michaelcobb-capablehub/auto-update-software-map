@@ -249,10 +249,6 @@ class GitSource(Source):
             if result is not None:
                 return result
 
-    @abstractmethod
-    def get_url_for_commit(self, commit):
-        raise NotImplementedError("Abstract method")
-
     def get_metadata_for_branch(self, branch):
         return {
             "name": branch.shorthand
@@ -266,6 +262,10 @@ class GitSource(Source):
             "url": self.get_url_for_commit(commit),
             "datetime": commit_datetime
         }
+
+    @abstractmethod
+    def get_url_for_commit(self, commit):
+        raise NotImplementedError("Abstract method")
 
 class GitHubGitSource(GitSource):
     def __init__(self, git_url, checkout_branch, *args):
