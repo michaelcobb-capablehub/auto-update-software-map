@@ -35,6 +35,7 @@ def format_datetime_date(datetime):
 def update_software_release_version(src_repo, fork_branch, applicable_version_methods):
     result = None
     src_remote_branches = src_repo.get_repo_remote_branches()
+    found_fork_branch = False
     for branch in src_remote_branches:
         logging.info(f"Checking version of remote branch '{branch.shorthand}' in {src_repo.get_src_url()}...")
         src_repo.checkout_remote_branch(branch)
@@ -42,11 +43,12 @@ def update_software_release_version(src_repo, fork_branch, applicable_version_me
         if versions is None:
             logging.warning(f"Warning: failed to find version of branch '{branch.shorthand}'")
             if branch == fork_branch:
-                raise RuntimeError(f"No version found for branch {branch.shorthand}")
+                raise RuntimeError(f"No version found for branch '{branch.shorthand}'")
         else:
             commit, ver = versions
             #print("\t", f"{branch.name}, {commit}, {ver}")
             if branch == fork_branch:
+                found_fork_branch = True
                 branch_meta = src_repo.get_metadata_for_branch(branch)
                 commit_meta = src_repo.get_metadata_for_commit(commit)
                 result = {
@@ -57,8 +59,9 @@ def update_software_release_version(src_repo, fork_branch, applicable_version_me
                     "version_date": str(format_datetime_date(commit_meta["datetime"]))
                 }
 
-    #if not found_current_branch:
-    #    print(f"Warning: branch {current_fork_branch} was not found in repository: {fork_repo_url}")
+    if not found_current_branch:
+        logging.warning(f"Branch '{fork_branch}' was not found in repository: {src_repo.get_src_url()}")
+
     return result
 
 def update_software_release_upstream_version(src_repo, upstream_repo, fork_branch, upstream_branch, applicable_upstream_version_methods):
