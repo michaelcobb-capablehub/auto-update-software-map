@@ -131,19 +131,22 @@ def update_software_release(arch, release, version_methods):
     release.update(new_version)
     release.update(new_upstream_version)
 
+def run_formatter(input_file, output_file):
+    """
+    do a simple deserialise -> serialise pass (a.k.a format the file with no content changes)
+    """
+    logging.info(f"formatting '{input_file}'...")
+    with open(input_file) as f:
+        conf = yaml.load(f)
+        if output_file is not None:
+            logging.info(f"Writing output to '{output_file}'...")
+            with open(output_file, "w") as o:
+                yaml.dump(conf, o)
 
-def main():
-    parser = argparse.ArgumentParser(
-                    description="Updates the software-map .yaml file with updated version information")
-    parser.add_argument("filename")
-    parser.add_argument("-o", "--output")
-    args = parser.parse_args()
 
-    input_yaml_file = args.filename
-    output_yaml_file = args.output if args.output is not None else args.filename
-
-    print(f"Checking {input_yaml_file}...")
-    with open(input_yaml_file) as f:
+def run_version_updater(input_file, output_file):
+    logging.info(f"Updating software versions in '{input_file}'...")
+    with open(input_file) as f:
         conf = yaml.load(f)
         software = conf.get("software")
 
@@ -158,9 +161,33 @@ def main():
             for release in releases:
                 update_software_release(arch, release, version_methods)
 
-        print(f"Writing new yaml to {output_yaml_file}...")
-        with open(output_yaml_file, "w") as o:
-            new_yaml = yaml.dump(conf, o)
+        if output_file is not None:
+            logging.info(f"Writing output to '{output_file}'...")
+            with open(output_file, "w") as o:
+                yaml.dump(conf, o)
+
+def main():
+    parser = argparse.ArgumentParser(description="Updates the specified software-map project .yaml file with updated version information.")
+    parser.add_argument("filename")
+    parser.add_argument("-o", "--output", help="Set output file. If omitted, default behaviour is to overwrite the input file.")
+    parser.add_argument("-l", "--loglevel", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], default=DEFAULT_LOGLEVEL, help="Set the logging leve.l")
+    parser.add_argument("-F", "--format", action="store_true", help="Perform formatting of the input file only - do not actually perform update checks.")
+    parser.add_argument("-d", "--dry-run", action="store_true", help="Perform a dry-run. Don't write any output files.")
+    args = parser.parse_args()
+
+    input_yaml_file = args.filename
+    output_yaml_file = None
+    if not args.dry_run:
+        output_yaml_file = args.output if args.output is not None else args.filename
+
+    logFormatter = logging.Formatter(fmt="%(levelname)-8s: %(message)s")
+    logging.basicConfig(level=getattr(logging, args.loglevel))
+    logging.getLogger().handlers[0].setFormatter(logFormatter)
+
+    if args.format:
+        return run_formatter(input_yaml_file, output_yaml_file)
+    else:
+        return run_version_updater(input_yaml_file, output_yaml_file)
 
 
 if __name__ == "__main__":
