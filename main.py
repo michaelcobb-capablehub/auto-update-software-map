@@ -13,7 +13,7 @@ import methods
 DEFAULT_LOGLEVEL = "INFO"
 
 yaml = YAML()
-yaml.default_flow_style=False
+yaml.default_flow_style = False
 yaml.width = sys.maxsize
 yaml.preserve_quotes = True
 
