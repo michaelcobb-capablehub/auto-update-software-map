@@ -12,6 +12,8 @@ import methods
 
 DEFAULT_LOGLEVEL = "INFO"
 
+CHECK_ALL_REMOTE_BRANCHES = False
+
 yaml = YAML()
 yaml.default_flow_style = False
 yaml.width = sys.maxsize
@@ -113,7 +115,11 @@ def update_software_release(arch, release, version_methods):
     src_repo = init_source("git", fork_repo_url)
     fork_branch = src_repo.get_origin_branch_ref(current_fork_branch)
 
-    new_version = update_software_release_version(src_repo, fork_branch, applicable_version_methods)
+    if CHECK_ALL_REMOTE_BRANCHES:
+        new_version = update_software_release_version(src_repo, fork_branch, applicable_version_methods)
+    else:
+        new_version = update_software_release_version_for_branch(src_repo, fork_branch, applicable_version_methods)
+
     if new_version is not None:
         new_version_commit, new_version_ver = new_version
         new_version_metadata = build_release_metadata_for_branch_commit(src_repo, fork_branch, new_version_commit)
