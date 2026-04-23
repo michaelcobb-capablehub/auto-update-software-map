@@ -107,29 +107,35 @@ def update_software_release(arch, release, version_methods):
     current_upstream_branch = release.get("upstream_branch")
     upstream_version = release.get("upstream_version")
 
-    applicable_upstream_version_methods = list(filter_applicable_version_methods(version_methods, release.get("upstream_applicable_version_methods")))
+    if upstream_repo_url is None:
+        new_upstream_version = None
+        logging.warning(f"There is no upstream repo set. Upstream version will not be checked")
+    else:
+        applicable_upstream_version_methods = list(filter_applicable_version_methods(version_methods, release.get("upstream_applicable_version_methods")))
 
-    # assume all repos are git repos for now
-    upstream_repo = init_source("git", upstream_repo_url)
-    upstream_branch = upstream_repo.get_origin_branch_ref(current_upstream_branch)
+        # assume all repos are git repos for now
+        upstream_repo = init_source("git", upstream_repo_url)
+        upstream_branch = upstream_repo.get_origin_branch_ref(current_upstream_branch)
 
-    new_upstream_version = update_software_release_upstream_version(src_repo, upstream_repo, fork_branch, upstream_branch, applicable_upstream_version_methods)
+        new_upstream_version = update_software_release_upstream_version(src_repo, upstream_repo, fork_branch, upstream_branch, applicable_upstream_version_methods)
 
     logging.debug(f"Arch: {arch}")
     logging.debug("\t", f"Release:")
     logging.debug("\t\t", f"Repo: '{fork_repo_url}'")
     logging.debug("\t\t\t", f"Commit: {current_fork_hash} ({current_fork_branch}) @ {current_fork_date}")
     logging.debug("\t\t\t", f"--> New Commit: {new_version.get('version_hash')} ({new_version.get('version_branch')}) @ {new_version.get('version_date')}")
-    logging.debug("\t", f"Upstream:")
-    logging.debug("\t\t", f"Repo: '{upstream_repo_url}'")
-    logging.debug("\t\t\t", f"Commit: {current_upstream_hash} ({current_upstream_branch}) @ {current_upstream_date}")
-    logging.debug("\t\t\t", f"--> New Commit: {new_upstream_version.get('upstream_hash')} ({new_upstream_version.get('upstream_branch')}) @ {new_upstream_version.get('upstream_date')}")
-    logging.debug("\t\t\t", f"Version: '{upstream_version}'")
-    logging.debug("\t\t\t", f"--> New Version: '{new_upstream_version.get('upstream_version')}'")
+    if new_upstream_version is not None:
+        logging.debug("\t", f"Upstream:")
+        logging.debug("\t\t", f"Repo: '{upstream_repo_url}'")
+        logging.debug("\t\t\t", f"Commit: {current_upstream_hash} ({current_upstream_branch}) @ {current_upstream_date}")
+        logging.debug("\t\t\t", f"--> New Commit: {new_upstream_version.get('upstream_hash')} ({new_upstream_version.get('upstream_branch')}) @ {new_upstream_version.get('upstream_date')}")
+        logging.debug("\t\t\t", f"Version: '{upstream_version}'")
+        logging.debug("\t\t\t", f"--> New Version: '{new_upstream_version.get('upstream_version')}'")
 
     # Update the "release" dict with new version information
     release.update(new_version)
-    release.update(new_upstream_version)
+    if new_upstream_version is not None:
+        release.update(new_upstream_version)
 
 def run_formatter(input_file, output_file):
     """
@@ -152,6 +158,10 @@ def run_version_updater(input_file, output_file):
 
         project_versions = conf.get("project_versions")
 
+        if project_versions is None:
+            logging.error(f"{input_file}: Missing required field: 'project_versions'")
+            return 1
+
         version_methods = list(map(map_method, project_versions.get("version_methods")))
 
         for s in software:
@@ -165,6 +175,7 @@ def run_version_updater(input_file, output_file):
             logging.info(f"Writing output to '{output_file}'...")
             with open(output_file, "w") as o:
                 yaml.dump(conf, o)
+        return 0
 
 def main():
     parser = argparse.ArgumentParser(description="Updates the specified software-map project .yaml file with updated version information.")
@@ -191,4 +202,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    rc = main()
+    sys.exit(rc)
