@@ -37,7 +37,8 @@ def __match_file(source, file_path, matchers):
                     if match:
                         matches.append(__collect_match_group(r.groupindex, match))
     except Exception as ex:
-        logging.error(f"Exception while processing file: {file_path}:", ex)
+        logging.error(f"Exception while processing file: {file_path}:")
+        logging.exception(ex)
 
     if len(matches) == 0:
         return None

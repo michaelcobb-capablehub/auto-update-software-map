@@ -32,34 +32,56 @@ def filter_applicable_version_methods(all_methods, applicable):
 def format_datetime_date(datetime):
     return time.strftime("%Y-%m-%d", datetime)
 
+def build_release_metadata_for_branch_commit(src_repo, branch, commit):
+    branch_meta = src_repo.get_metadata_for_branch(branch)
+    commit_meta = src_repo.get_metadata_for_commit(commit)
+    result = {
+        "version": str(commit_meta["short_id"]),
+        "version_hash": str(commit_meta["id"]),
+        "version_branch": str(branch_meta["name"]),
+        "version_url": str(commit_meta["url"]),
+        "version_date": str(format_datetime_date(commit_meta["datetime"]))
+    }
+    return result
+
+def build_upstream_release_metadata_for_branch_commit(upstream_repo, upstream_branch, diverge_commit, ver):
+    commit_meta = upstream_repo.get_metadata_for_commit(diverge_commit)
+    branch_meta = upstream_repo.get_metadata_for_branch(upstream_branch)
+    result = {
+        "upstream_version": str(ver),
+        "upstream_hash": str(commit_meta["id"]),
+        "upstream_branch": str(branch_meta["name"]),
+        "upstream_url": str(commit_meta["url"]),
+        "upstream_date": str(format_datetime_date(commit_meta["datetime"]))
+    }
+    return result
+
+def update_software_release_version_for_branch(src_repo, fork_branch, applicable_version_methods):
+    logging.info(f"Checking version of remote branch '{fork_branch.shorthand}' in {src_repo.get_src_url()}...")
+    src_repo.checkout_remote_branch(fork_branch)
+    versions = find_repo_version(src_repo, applicable_version_methods)
+    if versions is not None:
+        commit, ver = versions
+        logging.info(f"\t{fork_branch.name}, {commit}, {ver}")
+        return versions
+
+
 def update_software_release_version(src_repo, fork_branch, applicable_version_methods):
     result = None
     src_remote_branches = src_repo.get_repo_remote_branches()
     found_fork_branch = False
     for branch in src_remote_branches:
-        logging.info(f"Checking version of remote branch '{branch.shorthand}' in {src_repo.get_src_url()}...")
-        src_repo.checkout_remote_branch(branch)
-        versions = find_repo_version(src_repo, applicable_version_methods)
+        versions = update_software_release_version_for_branch(src_repo, branch, applicable_version_methods)
         if versions is None:
-            logging.warning(f"Warning: failed to find version of branch '{branch.shorthand}'")
             if branch == fork_branch:
                 raise RuntimeError(f"No version found for branch '{branch.shorthand}'")
-        else:
-            commit, ver = versions
-            #print("\t", f"{branch.name}, {commit}, {ver}")
-            if branch == fork_branch:
-                found_fork_branch = True
-                branch_meta = src_repo.get_metadata_for_branch(branch)
-                commit_meta = src_repo.get_metadata_for_commit(commit)
-                result = {
-                    "version": str(commit_meta["short_id"]),
-                    "version_hash": str(commit_meta["id"]),
-                    "version_branch": str(branch_meta["name"]),
-                    "version_url": str(commit_meta["url"]),
-                    "version_date": str(format_datetime_date(commit_meta["datetime"]))
-                }
+            else:
+                logging.warning(f"failed to find version for branch '{branch.shorthand}'")
+        if branch == fork_branch:
+            result = versions
+            found_fork_branch = True
 
-    if not found_current_branch:
+    if not found_fork_branch:
         logging.warning(f"Branch '{fork_branch}' was not found in repository: {src_repo.get_src_url()}")
 
     return result
@@ -72,19 +94,11 @@ def update_software_release_upstream_version(src_repo, upstream_repo, fork_branc
     if fork_point is not None:
         diverge_commit, commitver = fork_point
         if commitver is not None:
-            commit, ver = commitver
-            #print("Fork point:", diverge_commit, "Version:", ver)
-            commit_meta = upstream_repo.get_metadata_for_commit(diverge_commit)
-            branch_meta = upstream_repo.get_metadata_for_branch(upstream_branch)
-            result = {
-                "upstream_version": str(ver),
-                "upstream_hash": str(commit_meta["id"]),
-                "upstream_branch": str(branch_meta["name"]),
-                "upstream_url": str(commit_meta["url"]),
-                "upstream_date": str(format_datetime_date(commit_meta["datetime"]))
-            }
+            vercommit, ver = commitver
+            logging.info(f"Fork point: {diverge_commit}, Version: {ver}")
+            return (diverge_commit, commitver)
 
-    return result
+    return None
 
 def update_software_release(arch, release, version_methods):
     fork_repo_url = release.get("version_repo")
@@ -100,6 +114,9 @@ def update_software_release(arch, release, version_methods):
     fork_branch = src_repo.get_origin_branch_ref(current_fork_branch)
 
     new_version = update_software_release_version(src_repo, fork_branch, applicable_version_methods)
+    if new_version is not None:
+        new_version_commit, new_version_ver = new_version
+        new_version_metadata = build_release_metadata_for_branch_commit(src_repo, fork_branch, new_version_commit)
 
     upstream_repo_url = release.get("upstream_repo")
     current_upstream_hash = release.get("upstream_hash")
@@ -118,24 +135,28 @@ def update_software_release(arch, release, version_methods):
         upstream_branch = upstream_repo.get_origin_branch_ref(current_upstream_branch)
 
         new_upstream_version = update_software_release_upstream_version(src_repo, upstream_repo, fork_branch, upstream_branch, applicable_upstream_version_methods)
+        
 
     logging.debug(f"Arch: {arch}")
-    logging.debug("\t", f"Release:")
-    logging.debug("\t\t", f"Repo: '{fork_repo_url}'")
-    logging.debug("\t\t\t", f"Commit: {current_fork_hash} ({current_fork_branch}) @ {current_fork_date}")
-    logging.debug("\t\t\t", f"--> New Commit: {new_version.get('version_hash')} ({new_version.get('version_branch')}) @ {new_version.get('version_date')}")
+    logging.debug(f"\tRelease:")
+    logging.debug(f"\t\tRepo: '{fork_repo_url}'")
+    logging.debug(f"\t\t\tCommit: {current_fork_hash} ({current_fork_branch}) @ {current_fork_date}")
+    logging.debug(f"\t\t\t--> New Commit: {new_version_metadata.get('version_hash')} ({new_version_metadata.get('version_branch')}) @ {new_version_metadata.get('version_date')}")
     if new_upstream_version is not None:
-        logging.debug("\t", f"Upstream:")
-        logging.debug("\t\t", f"Repo: '{upstream_repo_url}'")
-        logging.debug("\t\t\t", f"Commit: {current_upstream_hash} ({current_upstream_branch}) @ {current_upstream_date}")
-        logging.debug("\t\t\t", f"--> New Commit: {new_upstream_version.get('upstream_hash')} ({new_upstream_version.get('upstream_branch')}) @ {new_upstream_version.get('upstream_date')}")
-        logging.debug("\t\t\t", f"Version: '{upstream_version}'")
-        logging.debug("\t\t\t", f"--> New Version: '{new_upstream_version.get('upstream_version')}'")
+        new_upstream_diverge_commit, new_upstream_commitver = new_upstream_version
+        new_upstream_commit, new_upstream_ver = new_upstream_commitver
+        new_upstream_version_metadata = build_upstream_release_metadata_for_branch_commit(upstream_repo, upstream_branch, new_upstream_diverge_commit, new_upstream_ver)
+        logging.debug(f"\tUpstream:")
+        logging.debug(f"\t\tRepo: '{upstream_repo_url}'")
+        logging.debug(f"\t\t\tCommit: {current_upstream_hash} ({current_upstream_branch}) @ {current_upstream_date}")
+        logging.debug(f"\t\t\t--> New Commit: {new_upstream_version_metadata.get('upstream_hash')} ({new_upstream_version_metadata.get('upstream_branch')}) @ {new_upstream_version_metadata.get('upstream_date')}")
+        logging.debug(f"\t\t\tVersion: '{upstream_version}'")
+        logging.debug(f"\t\t\t--> New Version: '{new_upstream_version_metadata.get('upstream_version')}'")
 
     # Update the "release" dict with new version information
-    release.update(new_version)
+    release.update(new_version_metadata)
     if new_upstream_version is not None:
-        release.update(new_upstream_version)
+        release.update(new_upstream_version_metadata)
 
 def run_formatter(input_file, output_file):
     """
