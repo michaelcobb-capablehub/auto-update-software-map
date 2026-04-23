@@ -169,7 +169,11 @@ def run_version_updater(input_file, output_file):
             releases = s.get("releases")
 
             for release in releases:
-                update_software_release(arch, release, version_methods)
+                is_latest = release.get("latest")
+                if is_latest:
+                    update_software_release(arch, release, version_methods)
+                else:
+                    logging.info(f"Skipping old release for '{release.get('version')}' ({arch})")
 
         if output_file is not None:
             logging.info(f"Writing output to '{output_file}'...")
