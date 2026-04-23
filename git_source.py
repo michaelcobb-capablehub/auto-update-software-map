@@ -2,7 +2,7 @@
 
 import os
 import shutil
-import urllib as urllib
+import urllib.parse
 import re
 import time
 from abc import *
