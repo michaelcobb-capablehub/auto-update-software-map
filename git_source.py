@@ -86,7 +86,7 @@ class GitSource(Source):
             for branch_name in self.git_repo.branches.local:
                 branch = self.git_repo.branches.get(branch_name)
                 self.checkout_local_branch(branch)
-                self.pull_current_branch()
+                # self.pull_current_branch()
 
         # make sure we checkout the required branch
         if checkout_branch is not None:
