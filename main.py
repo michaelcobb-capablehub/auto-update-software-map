@@ -120,6 +120,7 @@ def update_software_release(arch, release, version_methods):
     else:
         new_version = update_software_release_version_for_branch(src_repo, fork_branch, applicable_version_methods)
 
+    new_version_metadata = None
     if new_version is not None:
         new_version_commit, new_version_ver = new_version
         new_version_metadata = build_release_metadata_for_branch_commit(src_repo, fork_branch, new_version_commit)
@@ -130,8 +131,9 @@ def update_software_release(arch, release, version_methods):
     current_upstream_branch = release.get("upstream_branch")
     upstream_version = release.get("upstream_version")
 
+    new_upstream_version = None
+    new_upstream_version_metadata = None
     if upstream_repo_url is None:
-        new_upstream_version = None
         logging.warning(f"There is no upstream repo set. Upstream version will not be checked")
     else:
         applicable_upstream_version_methods = list(filter_applicable_version_methods(version_methods, release.get("upstream_applicable_version_methods")))
@@ -141,7 +143,6 @@ def update_software_release(arch, release, version_methods):
         upstream_branch = upstream_repo.get_origin_branch_ref(current_upstream_branch)
 
         new_upstream_version = update_software_release_upstream_version(src_repo, upstream_repo, fork_branch, upstream_branch, applicable_upstream_version_methods)
-        
 
     logging.debug(f"Arch: {arch}")
     logging.debug(f"\tRelease:")
@@ -212,16 +213,19 @@ def main():
     parser = argparse.ArgumentParser(description="Updates the specified software-map project .yaml file with updated version information.")
     parser.add_argument("filename")
     parser.add_argument("-o", "--output", help="Set output file. If omitted, default behaviour is to overwrite the input file.")
-    parser.add_argument("-l", "--loglevel", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], default=DEFAULT_LOGLEVEL, help="Set the logging leve.l")
+    parser.add_argument("-l", "--loglevel", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], default=DEFAULT_LOGLEVEL, help="Set the logging level.")
     parser.add_argument("-F", "--format", action="store_true", help="Perform formatting of the input file only - do not actually perform update checks.")
     parser.add_argument("-d", "--dry-run", action="store_true", help="Perform a dry-run. Don't write any output files.")
     args = parser.parse_args()
 
     input_yaml_file = args.filename
     output_yaml_file = None
+
+    # If an output file is not specified, overwrite the input file
     if not args.dry_run:
         output_yaml_file = args.output if args.output is not None else args.filename
 
+    # Set up the Logging module
     logFormatter = logging.Formatter(fmt="%(levelname)-8s: %(message)s")
     logging.basicConfig(level=getattr(logging, args.loglevel))
     logging.getLogger().handlers[0].setFormatter(logFormatter)
