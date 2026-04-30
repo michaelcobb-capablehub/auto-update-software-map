@@ -34,6 +34,20 @@ def filter_applicable_version_methods(all_methods, applicable):
 def format_datetime_date(datetime):
     return time.strftime("%Y-%m-%d", datetime)
 
+def dump_current_and_new_version(current, new):
+    logging.debug(f"Release:")
+    logging.debug(f"\tRepo: '{current.get('version_repo')}'")
+    logging.debug(f"\t\tCommit: {current.get('version_hash')} ({current.get('version_branch')}) @ {current.get('version_date')}")
+    logging.debug(f"\t\t--> New Commit: {new.get('version_hash')} ({new.get('version_branch')}) @ {new.get('version_date')}")
+
+def dump_current_and_new_upstream_version(current, new):
+    logging.debug(f"Upstream:")
+    logging.debug(f"\tRepo: '{current.get('upstream_repo')}'")
+    logging.debug(f"\t\tCommit: {current.get('upstream_hash')} ({current.get('upstream_branch')}) @ {current.get('upstream_date')}")
+    logging.debug(f"\t\t--> New Commit: {new.get('upstream_hash')} ({new.get('upstream_branch')}) @ {new.get('upstream_date')}")
+    logging.debug(f"\t\tVersion: '{current.get('upstream_version')}'")
+    logging.debug(f"\t\t--> New Version: '{new.get('upstream_version')}'")
+
 def build_release_metadata_for_branch_commit(src_repo, branch, commit):
     branch_meta = src_repo.get_metadata_for_branch(branch)
     commit_meta = src_repo.get_metadata_for_commit(commit)
@@ -144,25 +158,19 @@ def update_software_release(arch, release, version_methods):
 
         new_upstream_version = update_software_release_upstream_version(src_repo, upstream_repo, fork_branch, upstream_branch, applicable_upstream_version_methods)
 
-    logging.debug(f"Arch: {arch}")
-    logging.debug(f"\tRelease:")
-    logging.debug(f"\t\tRepo: '{fork_repo_url}'")
-    logging.debug(f"\t\t\tCommit: {current_fork_hash} ({current_fork_branch}) @ {current_fork_date}")
-    logging.debug(f"\t\t\t--> New Commit: {new_version_metadata.get('version_hash')} ({new_version_metadata.get('version_branch')}) @ {new_version_metadata.get('version_date')}")
+
     if new_upstream_version is not None:
         new_upstream_diverge_commit, new_upstream_commitver = new_upstream_version
         new_upstream_commit, new_upstream_ver = new_upstream_commitver
         new_upstream_version_metadata = build_upstream_release_metadata_for_branch_commit(upstream_repo, upstream_branch, new_upstream_diverge_commit, new_upstream_ver)
-        logging.debug(f"\tUpstream:")
-        logging.debug(f"\t\tRepo: '{upstream_repo_url}'")
-        logging.debug(f"\t\t\tCommit: {current_upstream_hash} ({current_upstream_branch}) @ {current_upstream_date}")
-        logging.debug(f"\t\t\t--> New Commit: {new_upstream_version_metadata.get('upstream_hash')} ({new_upstream_version_metadata.get('upstream_branch')}) @ {new_upstream_version_metadata.get('upstream_date')}")
-        logging.debug(f"\t\t\tVersion: '{upstream_version}'")
-        logging.debug(f"\t\t\t--> New Version: '{new_upstream_version_metadata.get('upstream_version')}'")
 
-    # Update the "release" dict with new version information
-    release.update(new_version_metadata)
-    if new_upstream_version is not None:
+    # Update the "release" dict with new version information and write output message markdown
+    logging.debug(f"Arch: {arch}")
+    if new_version_metadata is not None:
+        dump_current_and_new_version(release, new_version_metadata)
+        release.update(new_version_metadata)
+    if new_upstream_version_metadata is not None:
+        dump_current_and_new_upstream_version(release, new_upstream_version_metadata)
         release.update(new_upstream_version_metadata)
 
 def run_formatter(input_file, output_file):
