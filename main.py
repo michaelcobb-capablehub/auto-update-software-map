@@ -186,8 +186,8 @@ def run_version_updater(input_file, output_file):
         project_versions = conf.get("project_versions")
 
         if project_versions is None:
-            logging.error(f"{input_file}: Missing required field: 'project_versions'")
-            return 1
+            logging.error(f"{input_file}: Missing required field: 'project_versions', skipping...")
+            return 0
 
         version_methods = list(map(map_method, project_versions.get("version_methods")))
 
