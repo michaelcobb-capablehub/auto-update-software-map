@@ -143,7 +143,7 @@ def write_markdown_summary(out_filepath, arch, old_release, new_version, new_ups
 """)
 
 
-
+    # Prepend a header and append to the file only if we have generated a summary
     if len(message) > 0:
         message.appendleft(f"""
 - Repo: {old_release.get('version_repo')}, Arch: {arch}
