@@ -150,6 +150,8 @@ def write_markdown_summary(out_filepath, arch, old_release, new_version, new_ups
   Upstream repo: {old_release.get('upstream_repo')}
 
 """)
+        message.append("---")
+
         with open(out_filepath, "a") as out_file:
             logging.info(f"Writing Markdown summary to '{out_filepath}'...")
             out_file.write("\n".join(message))
