@@ -32,6 +32,9 @@ def map_method(method):
 def filter_applicable_version_methods(all_methods, applicable):
     return filter(lambda x: x["method"] in applicable if applicable is not None else True, all_methods)
 
+def any_neq(a, b, items):
+    return any(map(lambda x: a.get(x) != b.get(x), items))
+
 def format_datetime_date(datetime):
     return time.strftime("%Y-%m-%d", datetime)
 
@@ -115,7 +118,7 @@ def write_markdown_summary(out_filepath, arch, old_release, new_version, new_ups
     - No version information for repo {old_release.get('version_repo')} could be determined.
 """)
     else:
-        if new_version.get("version_hash") != old_release.get("version_hash"):
+        if any_neq(new_version, old_release, ["version_hash", "version_date", "version_url", "version"]):
             message.append(f"""
     - The commit hash of fork branch `{old_release.get('version_branch')}` changed:
         |         | Commit hash | Commit date | Commit URL | Reported version |
@@ -130,7 +133,7 @@ def write_markdown_summary(out_filepath, arch, old_release, new_version, new_ups
 
 """)
     else:
-        if new_upstream_version.get('upstream_hash') != old_release.get("upstream_hash"):
+        if any_neq(new_upstream_version, old_release, ["upstream_hash", "upstream_date", "upstream_url", "upstream_version"]):
             message.append(f"""
     - The fork point of the repo changed (upstream branch: `{old_release.get('upstream_branch')}`):
         |         | Commit hash | Commit date | Commit URL | Reported version |
