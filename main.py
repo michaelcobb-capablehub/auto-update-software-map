@@ -4,6 +4,7 @@ import sys
 import time
 import argparse
 import logging
+import collections
 
 from ruamel.yaml import YAML
 
@@ -48,11 +49,66 @@ def dump_current_and_new_upstream_version(current, new):
     logging.debug(f"\t\tVersion: '{current.get('upstream_version')}'")
     logging.debug(f"\t\t--> New Version: '{new.get('upstream_version')}'")
 
-def write_markdown_message(out_file, arch, old_release, new_version, new_upstream_version):
-    message = []
-    message.append(f"""
-- Repo: {old_release.get('version_repo')}, Arch: {arch}
+
+def write_markdown_summary_OLD(out_filepath, arch, old_release, new_version, new_upstream_version):
+    message = collections.deque()
+
+    if new_version is None:
+        message.append(f"""
+    - No version information for repo {old_release.get('version_repo')} could be determined.
+
 """)
+    else:
+        if new_version.get("version_hash") != old_release.get("version_hash"):
+            message.append(f"""
+    - Branch `{old_release.get('version_branch')}` updated:\\
+        From hash: `{old_release.get('version_hash')}` (date: {old_release.get('version_date')}, url: {old_release.get('version_url')})\\
+        To hash: `{new_version.get('version_hash')}` (date: {new_version.get('version_date')}, url: {new_version.get('version_url')})`
+
+""")
+        if new_version.get("version") != old_release.get("version"):
+            message.append(f"""
+    - The software version contained in branch `{old_release.get('version_branch')}` changed:\\
+        From: `{old_release.get('version')}`\\
+        To: `{new_version.get('version')}`
+
+""")
+    if new_upstream_version is None:
+        message.append(f"""
+    - No version information for the upstream repo {old_release.get('upstream_repo')} could be determined.
+
+""")
+    else:
+        if new_upstream_version.get('upstream_hash') != old_release.get("upstream_hash"):
+            message.append(f"""
+    - The fork point of the repo changed (upstream repo: {old_release.get('upstream_repo')}, upstream branch: `{old_release.get('upstream_branch')}`):\\
+        From hash: `{old_release.get('upstream_hash')}` (date: {old_release.get('upstream_date')}, url: {old_release.get('upstream_url')})\\
+        To hash: `{new_upstream_version.get('upstream_hash')}` (date: {new_upstream_version.get('upstream_date')}, url: {new_upstream_version.get('upstream_url')})`
+
+""")
+        if new_upstream_version.get("upstream_version") != old_release.get("upstream_version"):
+            message.append(f"""
+    - The fork point of the repo changed, and was updated to a new version:\\
+        From version: `{old_release.get('upstream_version')}`\\
+        To version: `{new_upstream_version.get('upstream_version')}`
+
+""")
+
+    # Only update the file if there is something to say...
+    if len(message) > 0:
+        message.appendleft(f"""
+- Repo: {old_release.get('version_repo')}, Arch: {arch}
+
+""")
+        with open(out_filepath, "a") as out_file:
+            logging.info(f"Writing Markdown summary to '{out_filepath}'...")
+            out_file.write("\n".join(message))
+
+
+
+
+def write_markdown_summary(out_filepath, arch, old_release, new_version, new_upstream_version):
+    message = collections.deque()
 
     if new_version is None:
         message.append(f"""
@@ -61,39 +117,38 @@ def write_markdown_message(out_file, arch, old_release, new_version, new_upstrea
     else:
         if new_version.get("version_hash") != old_release.get("version_hash"):
             message.append(f"""
-    - Branch `{old_release.get('version_branch')}` updated:
-        From hash: `{old_release.get('version_hash')}` (date: {old_release.get('version_date')})
-        To hash: `{new_version.get('version_hash')}` (date: {new_version.get('version_date')})`
-        The old commit URL is: {old_release.get('version_url')}
-        The new commit URL is: {new_version.get('version_url')}
+    - The commit hash of fork branch `{old_release.get('version_branch')}` changed:
+        |         | Commit hash | Commit date | Commit URL | Reported version |
+        | **Old** | `{old_release.get('version_hash')}` | {old_release.get('version_date')} | {old_release.get('version_url')} | {old_release.get('version')} |
+        | **New** | `{new_version.get('version_hash')}` | {new_version.get('version_date')} | {new_version.get('version_url')} | {new_version.get('version')} |
+
 """)
-        if new_version.get("version") != old_release.get("version"):
-            message.append(f"""
-    - The software version contained in branch `{old_release.get('version_branch')}` changed:
-        From: `{old_release.get('version')}`
-        To: `{new_version.get('version')}`
-""")
+
     if new_upstream_version is None:
-        message.append(f"""
+            message.append(f"""
     - No version information for the upstream repo {old_release.get('upstream_repo')} could be determined.
+
 """)
     else:
         if new_upstream_version.get('upstream_hash') != old_release.get("upstream_hash"):
             message.append(f"""
-    - The fork point of the repo changed:
-        Upstream repo: {old_release.get('upstream_repo')} (branch: `{old_release.get('upstream_branch')}`):
-        From hash: `{old_release.get('upstream_hash')}` (date: {old_release.get('upstream_date')})
-        To hash: `{new_version.get('upstream_hash')}` (date: {new_version.get('upstream_date')})`
-        The old commit URL is: {old_release.get('upstream_url')}
-        The new commit URL is: {new_version.get('upstream_url')}
+    - The fork point of the repo changed (upstream branch: `{old_release.get('upstream_branch')}`):
+        |         | Commit hash | Commit date | Commit URL | Reported version |
+        | **Old** | `{old_release.get('upstream_hash')}` | {old_release.get('upstream_date')} | {old_release.get('upstream_url')} | {old_release.get('upstream_version')} |
+        | **New** | `{new_upstream_version.get('upstream_hash')}` | {new_upstream_version.get('upstream_date')} | {new_upstream_version.get('upstream_url')} | {new_upstream_version.get('upstream_version')} |
+
 """)
-        if new_upstream_version.get("upstream_version") != old_release.get("upstream_version"):
-            message.append(f"""
-    - The fork point of the repo changed, and was updated to a new version:
-        From version: `{old_release.get('upstream_version')}`
-        To version: `{new_upstream_version.get('upstream_version')}`
+
+
+
+    if len(message) > 0:
+        message.appendleft(f"""
+- Repo: {old_release.get('version_repo')}, Arch: {arch}
+
 """)
-    out_file.write("\n".join(message))
+        with open(out_filepath, "a") as out_file:
+            logging.info(f"Writing Markdown summary to '{out_filepath}'...")
+            out_file.write("\n".join(message))
 
 def build_release_metadata_for_branch_commit(src_repo, branch, commit):
     branch_meta = src_repo.get_metadata_for_branch(branch)
@@ -163,7 +218,7 @@ def update_software_release_upstream_version(src_repo, upstream_repo, fork_branc
 
     return None
 
-def update_software_release(arch, release, version_methods):
+def update_software_release(arch, release, version_methods, output_summary_filepath=None):
     fork_repo_url = release.get("version_repo")
     current_fork_hash = release.get("version_hash")
     current_fork_date = release.get("version_date")
@@ -211,8 +266,8 @@ def update_software_release(arch, release, version_methods):
         new_upstream_commit, new_upstream_ver = new_upstream_commitver
         new_upstream_version_metadata = build_upstream_release_metadata_for_branch_commit(upstream_repo, upstream_branch, new_upstream_diverge_commit, new_upstream_ver)
 
-    with open(output_message_file, "a") as output_md_file:
-        write_markdown_message(output_md_file, arch, release, new_version_metadata, new_upstream_version_metadata)
+    if output_summary_filepath is not None:
+        write_markdown_summary(output_summary_filepath, arch, release, new_version_metadata, new_upstream_version_metadata)
 
     # Update the "release" dict with new version information and write output message markdown
     logging.debug(f"Arch: {arch}")
@@ -236,7 +291,7 @@ def run_formatter(input_file, output_file):
                 yaml.dump(conf, o)
 
 
-def run_version_updater(input_file, output_file, output_message_file):
+def run_version_updater(input_file, output_file, output_summary_filepath):
     logging.info(f"Updating software versions in '{input_file}'...")
     with open(input_file) as f:
         conf = yaml.load(f)
@@ -257,7 +312,7 @@ def run_version_updater(input_file, output_file, output_message_file):
             for release in releases:
                 is_latest = release.get("latest")
                 if is_latest:
-                    update_software_release(arch, release, version_methods)
+                    update_software_release(arch, release, version_methods, output_summary_filepath)
                 else:
                     logging.info(f"Skipping old release for '{release.get('version')}' ({arch})")
 
@@ -274,7 +329,7 @@ def main():
     parser.add_argument("-l", "--loglevel", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], default=DEFAULT_LOGLEVEL, help="Set the logging level.")
     parser.add_argument("-F", "--format", action="store_true", help="Perform formatting of the input file only - do not actually perform update checks.")
     parser.add_argument("-d", "--dry-run", action="store_true", help="Perform a dry-run. Don't write any output files.")
-    parser.add_argument("-m", "--output-message-file", help="Append a markdown formatted description of the changes to the specified file.")
+    parser.add_argument("-s", "--output-summary", help="Append a markdown formatted summary of the changes to the specified file.")
     args = parser.parse_args()
 
     input_yaml_file = args.filename
@@ -292,7 +347,7 @@ def main():
     if args.format:
         return run_formatter(input_yaml_file, output_yaml_file)
     else:
-        return run_version_updater(input_yaml_file, output_yaml_file, args.output_message_file)
+        return run_version_updater(input_yaml_file, output_yaml_file, args.output_summary)
 
 
 if __name__ == "__main__":
