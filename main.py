@@ -122,6 +122,7 @@ def write_markdown_summary(out_filepath, arch, old_release, new_version, new_ups
             message.append(f"""
     - The commit hash of fork branch `{old_release.get('version_branch')}` changed:
         |         | Commit hash | Commit date | Commit URL | Reported version |
+        |---------|-------------|-------------|------------|------------------|
         | **Old** | `{old_release.get('version_hash')}` | {old_release.get('version_date')} | {old_release.get('version_url')} | {old_release.get('version')} |
         | **New** | `{new_version.get('version_hash')}` | {new_version.get('version_date')} | {new_version.get('version_url')} | {new_version.get('version')} |
 
@@ -137,6 +138,7 @@ def write_markdown_summary(out_filepath, arch, old_release, new_version, new_ups
             message.append(f"""
     - The fork point of the repo changed (upstream branch: `{old_release.get('upstream_branch')}`):
         |         | Commit hash | Commit date | Commit URL | Reported version |
+        |---------|-------------|-------------|------------|------------------|
         | **Old** | `{old_release.get('upstream_hash')}` | {old_release.get('upstream_date')} | {old_release.get('upstream_url')} | {old_release.get('upstream_version')} |
         | **New** | `{new_upstream_version.get('upstream_hash')}` | {new_upstream_version.get('upstream_date')} | {new_upstream_version.get('upstream_url')} | {new_upstream_version.get('upstream_version')} |
 
